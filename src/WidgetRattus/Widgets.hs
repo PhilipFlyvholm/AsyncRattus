@@ -59,6 +59,7 @@ module WidgetRattus.Widgets
 import WidgetRattus
 import WidgetRattus.Widgets.InternalTypes
 import WidgetRattus.Signal
+import WidgetRattus.Behaviour
 import Data.Text
 import WidgetRattus.InternalPrimitives
 import System.IO.Unsafe
@@ -84,7 +85,7 @@ instance Displayable NominalDiffTime where
 
 
 -- Functions for constructing Async Rattus widgets. 
-mkButton :: (Displayable a) => Sig a -> C Button
+mkButton :: (Displayable a) => Beh a -> C Button
 mkButton t = do
       c <- chan
       return Button{btnContent = t, btnClick = c}
@@ -92,10 +93,10 @@ mkButton t = do
 mkTextField :: Text -> C TextField
 mkTextField txt = do
       c <- chan
-      let sig = txt ::: mkSig (box (wait c))
-      return TextField{tfContent = sig, tfInput = c}
+      let beh = Beh (txt ::: mkSig (box (wait c)))
+      return TextField{tfContent = beh, tfInput = c}
 
-mkLabel :: (Displayable a) => Sig a -> C Label
+mkLabel :: (Displayable a) => Beh a -> C Label
 mkLabel t = do
       return Label{labText = t}
 
@@ -113,42 +114,42 @@ instance {-# OVERLAPPING #-} (Widgets w) => Widgets (List w) where
       toWidgetList w = concatMap' toWidgetList w
 
 
-mkHStack :: IsWidget a => Sig(List a) -> C HStack
+mkHStack :: IsWidget a => Beh(List a) -> C HStack
 mkHStack wl = do
       return (HStack wl)
       
 mkConstHStack :: Widgets ws => ws -> C HStack
-mkConstHStack w = mkHStack (const (toWidgetList w))
+mkConstHStack w = mkHStack (constK (toWidgetList w))
 
-mkVStack :: IsWidget a => Sig(List a) -> C VStack
+mkVStack :: IsWidget a => Beh(List a) -> C VStack
 mkVStack wl = do
       return (VStack wl)
 
 mkConstVStack :: Widgets ws => ws -> C VStack
-mkConstVStack w = mkVStack (const (toWidgetList w))
+mkConstVStack w = mkVStack (constK (toWidgetList w))
 
-mkTextDropdown :: Sig (List Text) -> Text -> C TextDropdown
+mkTextDropdown :: Beh (List Text) -> Text -> C TextDropdown
 mkTextDropdown opts init = do
       c <- chan
-      let curr = init ::: mkSig (box (wait c))
+      let curr = Beh (init ::: mkSig (box (wait c)))
       return TextDropdown{tddCurr = curr, tddEvent = c, tddList = opts}
 
-mkPopup :: Sig Bool -> Sig Widget -> C Popup 
+mkPopup :: Beh Bool -> Beh Widget -> C Popup 
 mkPopup b w = do
       c <- chan
-      let sig = current b ::: interleave (box (\x _ -> x)) (future b) (mkSig (box (wait c)))
-      return Popup{popCurr = sig, popEvent = c, popChild = w}
+      let beh = Beh (current b ::: interleave (box (\x _ -> x)) (future b) (mkSig (box (wait c))))
+      return Popup{popCurr = beh, popEvent = c, popChild = w}
 
-mkSlider :: Int -> Sig Int -> Sig Int -> C Slider
+mkSlider :: Int -> Beh Int -> Beh Int -> C Slider
 mkSlider start min max = do
       c <- chan
-      let curr = start ::: mkSig (box (wait c))
+      let curr = Beh (start ::: mkSig (box (wait c)))
       return Slider{sldCurr = curr, sldEvent = c, sldMin = min, sldMax = max}
 
-mkProgressBar :: Sig Int -> Sig Int -> Sig Int -> C Slider
+mkProgressBar :: Beh Int -> Beh Int -> Beh Int -> C Slider
 mkProgressBar min max curr = do
       c <- chan
-      let boundedCurrent = WidgetRattus.Signal.zipWith (box Prelude.min) curr max
+      let boundedCurrent = WidgetRattus.Behaviour.zipWith (box Prelude.min) curr max
       return Slider{sldCurr = boundedCurrent, sldEvent = c, sldMin = min, sldMax = max}
 
 
@@ -160,7 +161,7 @@ btnOnClick btn =
       in box (wait ch)
 
 -- Function that constructs a delayed signal from a Button.
-btnOnClickSig :: Button -> O (Sig ())
+btnOnClickSig :: Button -> O (Beh ())
 btnOnClickSig btn = mkSig (btnOnClick btn)
 
 -- Creates a new textfield whose contents are determined by
@@ -169,8 +170,8 @@ btnOnClickSig btn = mkSig (btnOnClick btn)
 -- ticks in response to user input on the textfield.
 -- Note: the input TF and output TF share an input channel
 -- Hence if both are part of a GUI they will be written to simultaneously
-setInputSigTF :: TextField -> Sig Text -> TextField
-setInputSigTF tf sig = tf{tfContent = sig} 
+setInputSigTF :: TextField -> Beh Text -> TextField
+setInputSigTF tf beh = tf{tfContent = beh} 
 
 -- Uses the input signal to create a new textfield
 -- The returned textfield updates in response to the input signal
