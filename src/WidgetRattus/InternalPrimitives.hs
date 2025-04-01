@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module WidgetRattus.InternalPrimitives where
 
@@ -282,6 +283,8 @@ chan = C (\ _ -> Chan <$> atomicModifyIORef nextFreshChannel (\ x -> (x - 1, x))
 delayC :: O (C a) -> O a
 delayC (Delay c f) = Delay c (\ inp -> advC' (f inp) inp)
 
+delayCF :: O(a -> C b) -> O(a -> b)
+delayCF (Delay c f) = Delay c (\inp a -> advC' (f inp a) inp)
 
 {-# NOINLINE advC' #-}
 advC' :: C a -> InputValue -> a
@@ -316,6 +319,7 @@ instance Show Time where
 time :: C Time
 time = C $ \ _ ->  do UTCTime d t <- getCurrentTime
                       return $ Time d t
+
 
 
 {-# RULES

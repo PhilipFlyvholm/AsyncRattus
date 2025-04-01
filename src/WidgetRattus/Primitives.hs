@@ -3,7 +3,6 @@
 --  than the Haskell types that are indicated. The stricter Async
 --  Rattus typing rules for these primitives are given below.
 
-{-# LANGUAGE TypeOperators #-}
 module WidgetRattus.Primitives
   (O
   ,Box
