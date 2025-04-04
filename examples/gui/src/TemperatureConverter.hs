@@ -1,50 +1,60 @@
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Evaluate" #-}
 {-# HLINT ignore "Use const" #-}
 
-
 import WidgetRattus
-import WidgetRattus.Signal
-import WidgetRattus.Widgets
 import Prelude hiding (map, const, zipWith, zip, filter, getLine, putStrLn,null)
-import Data.Text hiding (filter, map, all)
+import Data.Text hiding (zipWith, filter, map, all)
 import Data.Text.Read
+import WidgetRattus.Widgets
+import WidgetRattus.Behaviour
+import WidgetRattus.Event
 
--- Benchmark 2
-celsiusToFahrenheit :: Text -> Text
-celsiusToFahrenheit t =
-        case signed decimal t of
-            Right (t', _) -> toText (t' * 9 `div` 5 + 32)
-            Left _ -> "Invalid input"
+celsiusToFahrenheit :: Int -> Int
+celsiusToFahrenheit t = t * 9 `div` 5 + 32
 
-fahrenheitToCelsius :: Text -> Text
-fahrenheitToCelsius t =
+fahrenheitToCelsius :: Int -> Int
+fahrenheitToCelsius t = (t - 32) * 5 `div` 9
+
+isNumber :: Text -> Maybe' Int
+isNumber "" = Just' 0
+isNumber t =
     case signed decimal t of
-        Right (t', _) -> toText ((t' - 32) * 5 `div` 9)
-        Left _ -> "Invalid input"
+        Right (t', "") -> Just' t'
+        _ -> Nothing'
 
 window :: C HStack
 window = do
+    -- TextFields
     tfF1 <- mkTextField "32"
     tfC1 <- mkTextField "0"
 
-    let convertFtoC = map (box fahrenheitToCelsius) (tfContent tfF1)
-    let convertCtoF = map (box celsiusToFahrenheit) (tfContent tfC1)
+    -- Input WidgetRattus.Events
+    let fEvent = WidgetRattus.Event.filterMap (box isNumber) (textFieldOnInput tfF1)
+    let cEvent = WidgetRattus.Event.filterMap (box isNumber) (textFieldOnInput tfC1)
 
-    let tfF2 = addInputSigTF tfF1 (future convertCtoF)
-    let tfC2 = addInputSigTF tfC1 (future convertFtoC)
+    -- ConvertWidgetRattus.Events
+    let convertFtoC = WidgetRattus.Event.map (box fahrenheitToCelsius) fEvent
+    let convertCtoF = WidgetRattus.Event.map (box celsiusToFahrenheit) cEvent
 
-    fLabel <- mkLabel (const ("Fahrenheit" :: Text))
-    cLabel <- mkLabel (const ("Celsius" :: Text))
+    -- Result WidgetRattus.Behaviour.
+    let c = stepper 0 (interleave (box (\x _ -> x)) cEvent convertFtoC)
+    let f = stepper 32 (interleave (box (\x _ -> x)) fEvent convertCtoF)
+
+    -- Bind input to TextFields
+    let tfF2 = setInputBehTF tfF1 (WidgetRattus.Behaviour.map (box toText) f)
+    let tfC2 = setInputBehTF tfC1 (WidgetRattus.Behaviour.map (box toText) c)
+
+    -- UI
+    fLabel <- mkLabel $ mkConstText "Fahrenheit"
+    cLabel <- mkLabel $ mkConstText "Celsius"
 
     fStack <- mkConstVStack (tfF2 :* fLabel)
-    cStack <- mkConstVStack (tfC2 :* cLabel)  
+    cStack <- mkConstVStack (tfC2 :* cLabel)
     mkConstHStack (fStack :* cStack)
- 
+
 
 main :: IO ()
 main = runApplication window

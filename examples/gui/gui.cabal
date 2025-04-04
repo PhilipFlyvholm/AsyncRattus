@@ -1,4 +1,4 @@
-cabal-version:       >=1.10
+cabal-version:       3.0
 
 name:                gui
 version:             0.1.0.0
@@ -7,44 +7,50 @@ author:              Patrick Bahr, Jean-Claude Sebastian Disch, Asger Lademark H
 maintainer:          paba@itu.dk
 build-type:          Simple
 
-executable calculator
-  hs-source-dirs:      src
-  main-is:             Calculator.hs
-  default-language:    Haskell2010
-  build-depends:       WidgetRattus>=0.2, base, text, containers
-  ghc-options:         -W
+common shared-settings
+  build-depends:
+    WidgetRattus ^>=0.4,
+    base ^>=4.17.2.1,
+    containers,
+    text,
+    time,
 
-executable counter
-  hs-source-dirs:      src
-  main-is:             Counter.hs
-  default-language:    Haskell2010
-  build-depends:       WidgetRattus>=0.2, base, text, containers
-  ghc-options:         -W
+  hs-source-dirs: src
+  default-language: Haskell2010
+  ghc-options: -W
 
 executable flight
-  hs-source-dirs:      src
-  main-is:             FlightBooker.hs
-  default-language:    Haskell2010
-  build-depends:       WidgetRattus>=0.2, base, text, containers
-  ghc-options:         -W
-
-executable converter
-  hs-source-dirs:      src
-  main-is:             TemperatureConverter.hs
-  default-language:    Haskell2010
-  build-depends:       WidgetRattus>=0.2, base, text, containers
-  ghc-options:         -W
+  import: shared-settings
+  main-is: FlightBooker.hs
 
 executable timer
-  hs-source-dirs:      src
-  main-is:             Timer.hs
-  default-language:    Haskell2010
-  build-depends:       WidgetRattus>=0.2, base, text, containers
-  ghc-options:         -W
+  import: shared-settings
+  main-is: Timer.hs
+
+executable counter
+  import: shared-settings
+  main-is: Counter.hs
 
 executable stopwatch
-  hs-source-dirs:      src
-  main-is:             Stopwatch.hs
-  default-language:    Haskell2010
-  build-depends:       WidgetRattus>=0.2, base, text, containers, time
-  ghc-options:         -W
+  import: shared-settings
+  main-is: Stopwatch.hs
+
+executable converter
+  import: shared-settings
+  main-is: TemperatureConverter.hs
+
+executable calculator
+  import: shared-settings
+  main-is: Calculator.hs
+
+executable rewrite
+  import: shared-settings
+  main-is: RewriteTests.hs
+
+executable integral
+  import: shared-settings
+  main-is: IntegralTests.hs
+
+executable derivative
+  import: shared-settings
+  main-is: DerivativeTests.hs

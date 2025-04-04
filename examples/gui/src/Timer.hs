@@ -1,64 +1,81 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
-
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
+{-# HLINT ignore "Use const" #-}
+{-# HLINT ignore "Use <$>" #-}
+
+module Main where
 
 import WidgetRattus
-import WidgetRattus.Signal
 import WidgetRattus.Widgets
-import Prelude hiding (map, const, zipWith, zip, filter, getLine, putStrLn,null)
-import Data.Text hiding (filter, map, all)
+import WidgetRattus.Behaviour
+import WidgetRattus.Event
+import Prelude hiding (const, filter, getLine, map, null, putStrLn, zip, zipWith)
 
+nominalToInt :: NominalDiffTime -> Int
+nominalToInt x = floor $ toRational x
 
-everySecondSig :: O (Sig ())
-everySecondSig = mkSig (box (timer 1000000))
+intToNominal :: Int -> NominalDiffTime
+intToNominal x = fromInteger (toInteger x)
 
-nats :: (Int :* Int) -> Sig (Int :* Int)
-nats (n :* max) = stop 
-    (box (\ (n :* max) -> n >= max)) 
-    (scanAwait (box (\ (n :* max) _ -> (n + 1) :* max)) (n :* max) everySecondSig)
+timeFrom :: C (Int -> NominalDiffTime -> Beh (NominalDiffTime :* Int))
+timeFrom = do
+  timeBeh <- elapsedTime
+  return
+    ( \max d ->
+        let addTime = WidgetRattus.Behaviour.map (box (\t -> t + d :* max)) timeBeh
+         in stopWith (box (\(a :* _) -> if nominalToInt a >= max then Just' (intToNominal max :* max) else Nothing')) addTime
+    )
 
+timerExample :: C VStack
+timerExample = do
+  let initialMax = 5
+  elapsedTime <- do
+    f <- timeFrom
+    return (f initialMax 0)
 
-reset :: (Int :* Int) -> (Int :* Int)
-reset (_ :* max) = (0 :* max)
+  -- Slider
+  maxSlider <- mkSlider initialMax (constK 1) (constK 100)
+  let maxBeh = sldCurr maxSlider
+  let maxChangeEv = sliderOnChange maxSlider
 
-setMax :: Int -> (Int :* Int) -> (Int :* Int)
-setMax max' (n :* _) = ((min n max') :* max')
+  -- Reset button
+  resetBtn <- mkButton $ mkConstText "Reset timer"
+  let resetTrigger = btnOnClickEv resetBtn
 
-window :: C VStack
-window = do
-    slider <- mkSlider 50 (const 1) (const 100)
-    resetBtn <- mkButton (const ("Reset" :: Text))
+  -- Input WidgetRattus.Events
+  let resetEv :: Ev (C (NominalDiffTime :* Int -> Beh (NominalDiffTime :* Int))) =
+        WidgetRattus.Event.map
+          ( box
+              ( \_ -> do
+                  f <- timeFrom
+                  return (\(_ :* max) -> f max 0)
+              )
+          )
+          resetTrigger
 
-    let resSig :: O (Sig ()) 
-         = mkSig (btnOnClick resetBtn)
-    let resetSig :: O (Sig (Int :* Int -> Int :* Int))
-         = mapAwait (box (\ _ -> reset)) resSig
+  let maxEv :: (Ev (C (NominalDiffTime :* Int -> Beh (NominalDiffTime :* Int)))) =
+        WidgetRattus.Event.map
+          ( box
+              ( \newMax -> do
+                  f <- timeFrom
+                  return (\(currentTime :* _) -> f newMax currentTime)
+              )
+          )
+          maxChangeEv
 
-    let currentMax :: Int
-         = current (sldCurr slider)
-    let setMaxSig :: O (Sig (Int :* Int -> Int :* Int)) 
-         = mapAwait (box setMax) (future (sldCurr slider))
- 
-    let inputSig :: O (Sig (Int :* Int -> Int :* Int))
-         = interleave (box (.)) resetSig setMaxSig
+  let combinedInput = WidgetRattus.Event.removeC $ WidgetRattus.Event.interleave (box (\_ m -> m)) resetEv maxEv
 
-    let inputSig' :: O (Sig (Int :* Int -> Sig (Int :* Int)))
-         = mapAwait (box (nats .)) inputSig
+  let timer = switchR elapsedTime combinedInput
 
-    let counterSig :: Sig (Int :* Int)
-         = switchR (nats (0 :* currentMax)) inputSig'
-    
-    let currentSig = map (box fst') counterSig
-    let maxSig = map (box snd') counterSig
-
-    label <- mkLabel currentSig
-    pb <- mkProgressBar (const 0) maxSig currentSig
-
-    mkConstVStack (slider :* resetBtn :* label :* pb)
+  -- UI
+  text <- mkLabel (WidgetRattus.Behaviour.map (box (\(t :* _) -> "Current: " <> toText (nominalToInt t))) timer)
+  maxText <- mkLabel (WidgetRattus.Behaviour.map (box (\max -> "Max: " <> toText max)) maxBeh)
+  mkConstVStack $ maxSlider :* maxText :* text :* resetBtn
 
 main :: IO ()
-main = runApplication window
+main = runApplication timerExample

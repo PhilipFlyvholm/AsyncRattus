@@ -1,26 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Evaluate" #-}
-{-# HLINT ignore "Use const" #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
+module Main where
 import WidgetRattus
-import WidgetRattus.Signal
 import WidgetRattus.Widgets
+import WidgetRattus.Behaviour
+import WidgetRattus.Event
+import Prelude hiding (const, filter, getLine, map, null, putStrLn, zip, zipWith)
 
-import Prelude hiding (map, const, zipWith, zip, filter, getLine, putStrLn,null)
-import Data.Text hiding (filter, map, all)
+counterAndTimer :: C VStack
+counterAndTimer = do
+  -- Button
+  counterBtn <- mkButton $ mkConstText "Increment"
+  let counterEv = scan (box (\n _ -> n + 1 :: Int)) 0 $ btnOnClickEv counterBtn
 
-window :: C VStack
-window = do 
-    btn <- mkButton (const ("Increment" :: Text))
-    let sig = btnOnClickSig btn
-    let sig' = scanAwait (box (\ n _ -> n+1 :: Int)) 0 sig 
-    lbl <- mkLabel sig'
-    mkConstVStack (lbl :* btn)
-    
+  -- UI
+  lbl <- mkLabel $ stepper 0 counterEv
+  mkConstVStack $ lbl :* counterBtn
 
 main :: IO ()
-main = runApplication window
+main = runApplication counterAndTimer

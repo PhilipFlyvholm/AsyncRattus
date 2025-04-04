@@ -1,17 +1,18 @@
+{-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
-{-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Evaluate" #-}
-{-# HLINT ignore "Use const" #-}
+
+module Main where
 
 import WidgetRattus
-import WidgetRattus.Signal
 import WidgetRattus.Widgets
-import Prelude hiding (map, const, zipWith, zipWith3, zip, filter, getLine, putStrLn,null)
+import WidgetRattus.Behaviour
+import WidgetRattus.Event
 import Data.Text (Text)
+import Prelude hiding (zipWith3, const, map)
 
--- Benchmark 3
+import WidgetRattus.Widgets ()
+
 isDate :: Text -> Bool
 isDate txt = case splitOn' "-" txt of
   [dayStr, monthStr, yearStr] ->
@@ -51,38 +52,43 @@ isLater dep ret = case (splitOn' "-" dep, splitOn' "-" ret) of
        (depYear == retYear && (depMonth < retMonth ||
        (depMonth == retMonth && depDay < retDay))))
   _ -> False
-
+  
 bookingToText :: Bool -> Text -> Text -> Text
 bookingToText oneWay dep ret =
   "You have booked a " <> if oneWay then "one-way flight on " <> dep
   else "return flight from " <> dep <> " to " <> ret
 
-window :: C VStack
-window = do
-    dropDown <- mkTextDropdown (const ["One-Way", "Return-Flight"]) "One-Way"
-    tf1 <- mkTextField "01-01-2021"
-    tf2 <- mkTextField "01-02-2021"
-    button <- mkButton (const  ("Book" :: Text))
+flightBooker :: C VStack
+flightBooker = do
+      -- Input UI
+      flightTypeDropdown <- mkTextDropdown (constK ["One-Way", "Return-Flight"]) "One-Way"
+      departureDateField <- mkTextField "01-01-2021"
+      returnDateField <- mkTextField "01-02-2021"
+      bookButton <- mkButton (mkConstText "Book")
+      
+      -- Flight type checker
+      let isReturnFlight = WidgetRattus.Behaviour.map (box (== "Return-Flight")) (tddCurr flightTypeDropdown)
+      let isOneWayFlight = WidgetRattus.Behaviour.map (box (== "One-Way")) (tddCurr flightTypeDropdown)
+      
+      -- Popup
+      let bookingSummary = zipWith3 (box bookingToText) isOneWayFlight (tfContent departureDateField) (tfContent returnDateField)
 
-    let isRF = map (box (== "Return-Flight")) (tddCurr dropDown)
-    let isOW = map (box (== "One-Way")) (tddCurr dropDown)
-    
-    let labelSig = zipWith3 (box bookingToText) isOW (tfContent tf1) (tfContent tf2)
+      let triggerPopup = scan (box (\_ _ -> True)) False (btnOnClickEv bookButton)
+      
+      summaryLabel <- mkLabel bookingSummary
+      let summaryLabel' = mkWidget summaryLabel
+      summaryPopup <- mkPopup triggerPopup (constK summaryLabel')
 
-    let sig = scanAwait (box (\ _ _ -> True )) False (btnOnClickSig button)
+      -- Valid booking checker
+      let departureDateFieldIsDate = WidgetRattus.Behaviour.map (box isDate) (tfContent departureDateField)
+      let departureDateFieldIsLater = WidgetRattus.Behaviour.zipWith (box isLater) (tfContent departureDateField) (tfContent returnDateField)
 
-    label <- mkLabel labelSig
-    
-    popup <- mkPopup sig (const (mkWidget label))
+      let oneWayAndDate = WidgetRattus.Behaviour.zipWith (box (&&)) isOneWayFlight departureDateFieldIsDate
+      let returnFlightAndIsLater = WidgetRattus.Behaviour.zipWith (box (&&)) isReturnFlight departureDateFieldIsLater
+      let validBooking = WidgetRattus.Behaviour.zipWith (box (||)) oneWayAndDate returnFlightAndIsLater
 
-    let tf1IsDate = map (box isDate) (tfContent tf1)
-    let tf1IsLater = zipWith (box isLater) (tfContent tf1) (tfContent tf2)
-
-    let oneWayAndDate = zipWith (box (&&)) isOW tf1IsDate
-    let returnFlightAndIsLater = zipWith (box (&&)) isRF tf1IsLater
-    let validBooking = zipWith (box (||)) oneWayAndDate returnFlightAndIsLater
-
-    mkConstVStack (popup :* dropDown :* tf1 :* setEnabled tf2 isRF :* setEnabled button validBooking)
+      -- UI
+      mkConstVStack (summaryPopup :* flightTypeDropdown :* departureDateField :* setEnabled returnDateField isReturnFlight :* setEnabled bookButton validBooking)
 
 main :: IO ()
-main = runApplication window
+main = runApplication flightBooker

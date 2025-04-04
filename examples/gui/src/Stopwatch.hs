@@ -1,70 +1,56 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
-
-{-# LANGUAGE TypeOperators #-}
+{-# HLINT ignore "Use const" #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
+module Main where
 
 import WidgetRattus
-
-import WidgetRattus.Signal
+import WidgetRattus.Signal (Sig ((:::)))
 import WidgetRattus.Widgets
-import Prelude hiding (map, const, zipWith, zip, filter, getLine, putStrLn,null)
-import Data.Text hiding (filter, map, all)
+import WidgetRattus.Behaviour
+import WidgetRattus.Event
+import Prelude hiding (const, filter, getLine, map, null, putStrLn, zip, zipWith)
 
-sampleInterval :: O ()
-sampleInterval = timer 20000
+elapsedTime' :: C (NominalDiffTime -> Beh NominalDiffTime)
+elapsedTime' =
+  do
+    startTime <- time
+    return (\f -> Beh (Fun () (box (\_ currentTime -> (f + diffTime currentTime startTime) :*  Just' ())) ::: never))
 
-currentTime :: C (Sig Time)
-currentTime = do
-     t <- time 
-     return (t ::: mkSig (box (delayC $ delay (let _ = adv sampleInterval in time))))
-     
+timerExample :: C VStack
+timerExample = do
+  -- Time
+  startElapsedTime <- elapsedTime
+  
+  -- Buttons
+  startBtn <- mkButton (mkConstText "Start")
+  let startEv = btnOnClick startBtn
+  stopBtn <- mkButton (mkConstText "Stop")
+  let stopEv = btnOnClick stopBtn
+  
+  -- Start and stop WidgetRattus.Events
+  let startTime :: Ev (NominalDiffTime -> Beh NominalDiffTime) =
+        mkEv' (box (delay (let _ = adv (unbox startEv) in elapsedTime')))
+  let stopTime :: Ev (NominalDiffTime -> Beh NominalDiffTime) =
+        mkEv (box (delay (let _ = adv (unbox stopEv) in const . K)))
 
+  let combinedInput = WidgetRattus.Event.interleave (box (\x _ -> x)) startTime stopTime
+  let stopWatchSig = switchR (constK 0) combinedInput
 
+  -- UI
+  timeLabName <- mkLabel (mkConstText "Current Time:")
+  swLabName <- mkLabel (mkConstText "Elapsed Time:")
 
-elapsedTime :: C (NominalDiffTime -> Sig NominalDiffTime)
-elapsedTime =  do t <- time
-                  return (\ s -> run s t)
-     where run :: NominalDiffTime -> Time -> Sig NominalDiffTime
-           run start t = 
-               start ::: delayC (delay (
-                    let _ = adv sampleInterval 
-                    in do t' <- time
-                          return (run (start + (t' `diffTime` t)) t')))
-
-window :: C VStack
-window = do
-    startBtn <- mkButton (const ("Start" :: Text))
-    stopBtn <- mkButton (const ("Stop" :: Text))
-    let startDelay = btnOnClick startBtn
-    let startSig :: O (Sig (NominalDiffTime -> Sig NominalDiffTime)) 
-         = mkSig' (box (delay (let _ = adv (unbox startDelay) in elapsedTime)))
-
-    let stopDelay = btnOnClick stopBtn
-    let stopSig :: O (Sig (NominalDiffTime -> Sig NominalDiffTime)) 
-         = mkSig (box (delay (let _ = adv (unbox stopDelay) in const)))
-
-    
-    let inputSig :: O (Sig (NominalDiffTime -> Sig NominalDiffTime))
-         = interleave (box (\ x _ -> x)) startSig stopSig
-
-
-    let stopWatchSig :: Sig NominalDiffTime
-         = switchR (const 0) inputSig
-
-    timeLabName <- mkLabel (const ("Current Time:" :: Text))
-    swLabName <- mkLabel (const ("Elapsed Time:" :: Text))
-
-
-    timeLab <- currentTime >>= mkLabel
-    stopWatchLab <- mkLabel stopWatchSig
-    buttons <- mkConstHStack (startBtn :* stopBtn)
-    time <- mkConstHStack (timeLabName :* timeLab)
-    sw <- mkConstHStack (swLabName :* stopWatchLab)
-
-    mkConstVStack (time :* sw :* buttons)
+  timeLab <- mkLabel startElapsedTime
+  stopWatchLab <- mkLabel stopWatchSig
+  
+  time <- mkConstHStack (timeLabName :* timeLab)
+  sw <- mkConstHStack (swLabName :* stopWatchLab)
+  buttons <- mkConstHStack (startBtn :* stopBtn)
+  mkConstVStack (time :* sw :* buttons)
 
 main :: IO ()
-main = runApplication window
+main = runApplication timerExample
