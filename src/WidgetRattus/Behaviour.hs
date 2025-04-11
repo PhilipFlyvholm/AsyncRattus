@@ -17,8 +17,8 @@
 module WidgetRattus.Behaviour where
 
 import WidgetRattus
-import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock)
-import WidgetRattus.Signal hiding (const, integral, jump, map, switch)
+import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock, advC', InputValue (OneInput))
+import WidgetRattus.Signal hiding (const, integral, jump, switch)
 import Prelude hiding (const, map, zipWith)
 
 data Fun a where
@@ -316,11 +316,27 @@ instance (Continuous a) => Continuous (Beh a) where
     if inputInClock inp cl
       then Beh (adv' xs inp)
       else progressInternal inp (Beh (x ::: xs))
-  progressAndNext inp (Beh (x ::: xs@(Delay cl _))) =
-    if inputInClock inp cl
-      then let n = adv' xs inp in (Beh n, nextProgress n)
-      else let (n, cl') = progressAndNext inp x in (Beh (n ::: xs), cl `clockUnion` cl')
-  nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
+  progressAndNext inp b@(Beh (x ::: xs@(Delay cl _))) = 
+    let d = advC' (discretize b) inp
+        (d', cl') = progressAndNext inp d
+    in 
+      (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
+     
+  nextProgress b@(Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
+
+-- Original code:
+-- 
+-- instance (Continuous a) => Continuous (Beh a) where
+--   progressInternal inp (Beh (x ::: xs@(Delay cl _))) =
+--     if inputInClock inp cl
+--       then Beh (adv' xs inp)
+--       else progressInternal inp (Beh (x ::: xs))
+--   progressAndNext inp (Beh (x ::: xs@(Delay cl _))) =
+--     if inputInClock inp cl
+--       then let n = adv' xs inp in (Beh n, nextProgress n)
+--       else let (n, cl') = progressAndNext inp x in (Beh (n ::: xs), cl `clockUnion` cl')
+--   nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
+
 
 -- Prevent functions from being inlined too early for the rewrite
 -- rules to fire.
@@ -335,10 +351,10 @@ instance (Continuous a) => Continuous (Beh a) where
 
 {-# RULES
 "beh.map/beh.map" forall f g xs.
-  map f (map g xs) =
-    map (box (unbox f . unbox g)) xs
+  WidgetRattus.Behaviour.map f (WidgetRattus.Behaviour.map g xs) =
+    WidgetRattus.Behaviour.map (box (unbox f . unbox g)) xs
 "beh.constK/beh.map" forall (f :: (Stable b) => Box (a -> b)) x.
-  map f (constK x) =
+  WidgetRattus.Behaviour.map f (constK x) =
     let x' = unbox f x in constK x'
 "beh.const/beh.switch" forall x xs.
   switch (const x) xs =

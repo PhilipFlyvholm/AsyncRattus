@@ -200,11 +200,9 @@ runApplication (C w) = do
   M.startApp (AppModel w' emptyClock) handler builder config
   where
     builder _ (AppModel w _) =
-      ( unsafePerformIO $ do
+      unsafePerformIO (do
           let (C node) = mkWidgetNode w
-          b' <- node (OneInput 0 ())
-          return b'
-      )
+          node (OneInput 0 ()))
         `M.styleBasic` [M.padding 3]
     handler _ _ (AppModel w cl) (AppEvent (Chan ch) d) =
       let inp = OneInput ch d
