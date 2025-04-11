@@ -324,20 +324,6 @@ instance (Continuous a) => Continuous (Beh a) where
      
   nextProgress b@(Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
 
--- Original code:
--- 
--- instance (Continuous a) => Continuous (Beh a) where
---   progressInternal inp (Beh (x ::: xs@(Delay cl _))) =
---     if inputInClock inp cl
---       then Beh (adv' xs inp)
---       else progressInternal inp (Beh (x ::: xs))
---   progressAndNext inp (Beh (x ::: xs@(Delay cl _))) =
---     if inputInClock inp cl
---       then let n = adv' xs inp in (Beh n, nextProgress n)
---       else let (n, cl') = progressAndNext inp x in (Beh (n ::: xs), cl `clockUnion` cl')
---   nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
-
-
 -- Prevent functions from being inlined too early for the rewrite
 -- rules to fire.
 
