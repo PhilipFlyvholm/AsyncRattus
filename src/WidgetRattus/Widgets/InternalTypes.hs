@@ -9,7 +9,6 @@ import Data.Text
 import qualified Monomer as M
 import WidgetRattus
 import WidgetRattus.Behaviour
-import WidgetRattus.Event
 import WidgetRattus.InternalPrimitives
 import WidgetRattus.Signal
 

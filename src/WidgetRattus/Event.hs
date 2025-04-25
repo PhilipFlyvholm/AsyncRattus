@@ -2,12 +2,30 @@
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
-module WidgetRattus.Event where
+module WidgetRattus.Event
+  ( Ev (..),
+    map,
+    stepper,
+    trigger,
+    triggerM,
+    interleave,
+    interleaveAll,
+    scan,
+    filterMap,
+    filter,
+    switchS,
+    switchSM,
+    switchR,
+    buffer,
+    mkEv,
+    mkEv',
+  )
+where
 
 import Data.IntMap ()
 import WidgetRattus
 import WidgetRattus.Behaviour hiding (map)
-import WidgetRattus.Signal hiding (buffer, interleave, interleaveAll, map, scan, switchR, switchS)
+import WidgetRattus.Signal hiding (buffer, interleave, interleaveAll, map, scan, switchR, switchS, trigger, triggerM)
 import Prelude hiding (filter, map)
 
 data Ev a
@@ -57,65 +75,34 @@ map f (EvSparse sig) =
         )
     )
 
-removeC :: Ev (C a) -> Ev a
-removeC (EvDense sig) =
-  EvDense
-    ( delayC
-        ( delay
-            ( let x ::: xs = adv sig
-                  (EvDense rest) = removeC (EvDense xs)
-               in ( do
-                      x' <- x
-                      return (x' ::: rest)
-                  )
-            )
-        )
-    )
-
--- delayCFMap :: Ev (a -> C b) -> Ev (a -> b)
--- delayCFMap (EvDense sig) =
---   EvDense (
---     delay (
---       let x ::: xs = adv sig
---       in do
---         return (\a -> x a)
---     )
---   )
-
---  EvDense
---     (
---        let y = delay (let (x ::: xs) = adv sig in x)
---         in mapO (box (\d -> d ::: (let (EvDense sig') = delayCFMap (EvDense sig) in sig'))) (delayCF y)
---     )
-
 stepper :: (Stable a) => a -> Ev a -> Beh a
 stepper initial event =
-  Beh (K initial ::: delay (unwrap (adv (aux initial event))))
+  Beh (K initial ::: delay (adv (aux initial event)))
   where
-    aux :: (Stable a) => a -> Ev a -> O (Beh a)
+    aux :: (Stable a) => a -> Ev a -> O (Sig (Fun a))
     aux _ (EvDense ev) =
-      delay (let (x ::: xs) = adv ev in Beh (K x ::: delay (unwrap (adv (aux x (EvDense xs))))))
+      delay (let (x ::: xs) = adv ev in K x ::: delay (adv (aux x (EvDense xs))))
     aux initial (EvSparse ev) =
       delay
         ( let (x ::: xs) = adv ev
            in case x of
                 Just' x' ->
-                  Beh (K x' ::: delay (unwrap (adv (aux x' (EvSparse xs)))))
-                Nothing' -> Beh (K initial ::: delay (unwrap (adv (aux initial (EvSparse xs)))))
+                  K x' ::: delay (adv (aux x' (EvSparse xs)))
+                Nothing' -> K initial ::: delay (adv (aux initial (EvSparse xs)))
         )
 
-trigger :: Stable b => Box (a -> b -> c) -> Ev a -> Beh b -> Ev c
+trigger :: (Stable b) => Box (a -> b -> c) -> Ev a -> Beh b -> Ev c
 trigger f event behaviour = EvSparse (trig f event behaviour)
   where
-    trig :: Stable b => Box (a -> b -> c) -> Ev a -> Beh b -> O (Sig (Maybe' c))
+    trig :: (Stable b) => Box (a -> b -> c) -> Ev a -> Beh b -> O (Sig (Maybe' c))
     trig f' (EvSparse as) (Beh (b ::: bs)) =
       delayC $
         delay
-          ( let d = select as bs
+          ( let choice = select as bs
              in ( do
                     t <- time
                     return
-                      ( case d of
+                      ( case choice of
                           Fst (a' ::: as') bs' ->
                             let rest = trig f' (EvSparse as') (Beh (b ::: bs'))
                              in case a' of
@@ -145,10 +132,10 @@ trigger f event behaviour = EvSparse (trig f event behaviour)
                 )
           )
 
-triggerM :: Stable b => Box (a -> b -> Maybe' c) -> Ev a -> Beh b -> Ev (Maybe' c)
+triggerM :: (Stable b) => Box (a -> b -> Maybe' c) -> Ev a -> Beh b -> Ev (Maybe' c)
 triggerM f event behaviour = EvDense (trig f event behaviour)
   where
-    trig :: Stable b => Box (a -> b -> Maybe' c) -> Ev a -> Beh b -> O (Sig (Maybe' c))
+    trig :: (Stable b) => Box (a -> b -> Maybe' c) -> Ev a -> Beh b -> O (Sig (Maybe' c))
     trig f' (EvDense as) (Beh (b ::: bs)) =
       delayC $
         delay
@@ -180,6 +167,14 @@ triggerM f event behaviour = EvDense (trig f event behaviour)
                 )
           )
 
+denseToSparse :: O (Sig a) -> O (Sig (Maybe' a))
+denseToSparse ev =
+  delay
+    ( let (x ::: xs) = adv ev
+       in Just' x ::: denseToSparse xs
+    )
+
+{-# ANN interleave AllowRecursion #-}
 interleave :: Box (a -> a -> a) -> Ev a -> Ev a -> Ev a
 interleave f (EvDense xs) (EvDense ys) =
   EvDense $
@@ -213,42 +208,8 @@ interleave f (EvSparse xs) (EvSparse ys) =
                   (_ :* _) ->
                     Nothing' ::: rest
       )
-interleave f (EvSparse xs) (EvDense ys) =
-  EvSparse $
-    delay
-      ( case select xs ys of
-          Fst (x ::: xs') ys' ->
-            let EvSparse rest = interleave f (EvSparse xs') (EvDense ys')
-             in (x ::: rest)
-          Snd xs' (y ::: ys') ->
-            let EvSparse rest = interleave f (EvSparse xs') (EvDense ys')
-             in (Just' y ::: rest)
-          Both (x ::: xs') (y ::: ys') ->
-            let EvSparse rest = interleave f (EvSparse xs') (EvDense ys')
-             in case x of
-                  (Just' x') ->
-                    Just' (unbox f x' y) ::: rest
-                  _ ->
-                    Nothing' ::: rest
-      )
-interleave f (EvDense xs) (EvSparse ys) =
-  EvSparse $
-    delay
-      ( case select xs ys of
-          Fst (x ::: xs') ys' ->
-            let EvSparse rest = interleave f (EvDense xs') (EvSparse ys')
-             in (Just' x ::: rest)
-          Snd xs' (y ::: ys') ->
-            let EvSparse rest = interleave f (EvDense xs') (EvSparse ys')
-             in (y ::: rest)
-          Both (x ::: xs') (y ::: ys') ->
-            let EvSparse rest = interleave f (EvDense xs') (EvSparse ys')
-             in case y of
-                  (Just' y') ->
-                    Just' (unbox f x y') ::: rest
-                  _ ->
-                    Nothing' ::: rest
-      )
+interleave f (EvSparse xs) (EvDense ys) = interleave f (EvSparse xs) (EvSparse (denseToSparse ys))
+interleave f (EvDense xs) (EvSparse ys) = interleave f (EvSparse (denseToSparse xs)) (EvSparse ys)
 
 {-# ANN interleaveAll AllowRecursion #-}
 interleaveAll :: Box (a -> a -> a) -> List (Ev a) -> Ev a
@@ -302,7 +263,7 @@ filterMap f (EvSparse ev) =
 filter :: Box (a -> Bool) -> Ev a -> Ev a
 filter f = filterMap (box (\x -> if unbox f x then Just' x else Nothing'))
 
-switchS :: Stable a => Beh a -> O (a -> Beh a) -> Beh a
+switchS :: (Stable a) => Beh a -> O (a -> Beh a) -> Beh a
 switchS (Beh (x ::: xs)) d =
   let rest =
         delayC
@@ -320,27 +281,7 @@ switchS (Beh (x ::: xs)) d =
           )
    in Beh (x ::: rest)
 
-switchS' :: Stable a => Beh a -> O (a -> C (Beh a)) -> Beh a
-switchS' (Beh (x ::: xs)) d =
-  let rest =
-        delayC
-          ( delay
-              ( let ticker = select xs d
-                 in do
-                      t <- time
-                      let result =
-                            ( case ticker of
-                                Fst xs' d' -> do
-                                  return $ switchS' (Beh xs') d'
-                                Snd _ f -> f (apply x t)
-                                Both _ f -> f (apply x t)
-                            )
-                      unwrap <$> result
-              )
-          )
-   in Beh (x ::: rest)
-
-switchSM :: Stable a => Beh a -> O (Maybe' (a -> Beh a)) -> Beh a
+switchSM :: (Stable a) => Beh a -> O (Maybe' (a -> Beh a)) -> Beh a
 switchSM (Beh (x ::: xs)) d =
   let rest =
         delayC
@@ -360,29 +301,7 @@ switchSM (Beh (x ::: xs)) d =
           )
    in Beh (x ::: rest)
 
-switchSM' :: Stable a => Beh a -> O (Maybe' (a -> C (Beh a))) -> Beh a
-switchSM' (Beh (x ::: xs)) d =
-  let rest =
-        delayC
-          ( delay
-              ( let ticker = select xs d
-                 in do
-                      t <- time
-                      let result =
-                            ( case ticker of
-                                Fst xs' d' -> do return $ switchSM' (Beh xs') d'
-                                Snd _ (Just' f) -> f (apply x t)
-                                Snd xs' Nothing' -> do return $ Beh (x ::: xs')
-                                Both _ (Just' f) -> f (apply x t)
-                                Both xs' Nothing' -> do return $ Beh xs'
-                            )
-
-                      unwrap <$> result
-              )
-          )
-   in Beh (x ::: rest)
-
-switchR :: Stable a => Beh a -> Ev (a -> Beh a) -> Beh a
+switchR :: (Stable a) => Beh a -> Ev (a -> Beh a) -> Beh a
 switchR beh (EvDense steps) =
   switchS beh (delay (let step ::: steps' = adv steps in (\x -> switchR (step x) (EvDense steps'))))
 switchR beh (EvSparse steps) =
@@ -392,34 +311,6 @@ switchR beh (EvSparse steps) =
         ( let step ::: steps' = adv steps
            in case step of
                 Just' a -> Just' (\x -> switchR (a x) (EvSparse steps'))
-                Nothing' -> Nothing'
-        )
-    )
-
-switchR' :: Stable a => Beh a -> Ev (a -> C (Beh a)) -> Beh a
-switchR' beh (EvDense steps) =
-  switchS'
-    beh
-    ( delay
-        ( let step ::: steps' = adv steps
-           in ( \x -> do
-                  x' <- step x
-                  return $ switchR' x' (EvDense steps')
-              )
-        )
-    )
-switchR' beh (EvSparse steps) =
-  switchSM'
-    beh
-    ( delay
-        ( let step ::: steps' = adv steps
-           in case step of
-                Just' a ->
-                  Just'
-                    ( \x -> do
-                        x' <- a x
-                        return $ switchR' x' (EvSparse steps')
-                    )
                 Nothing' -> Nothing'
         )
     )

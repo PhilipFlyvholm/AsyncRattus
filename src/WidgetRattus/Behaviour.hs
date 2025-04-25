@@ -1,4 +1,3 @@
-{-# HLINT ignore "Eta reduce" #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
@@ -14,12 +13,35 @@
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module WidgetRattus.Behaviour where
+module WidgetRattus.Behaviour
+ (
+  Beh (..),
+  Fun (..),
+  apply,
+  WidgetRattus.Behaviour.map,
+  mapF,
+  unwrap,
+  const,
+  constK,
+  timeBehaviour,
+  sampleInterval,
+  discretize,
+  elapsedTime,
+  withTime,
+  switch,
+  zipWith,
+  zipWith3,
+  stop,
+  stopWith,
+  integral,
+  derivative,
+ )
+where
 
 import WidgetRattus
-import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock, advC', InputValue (OneInput))
-import WidgetRattus.Signal hiding (const, integral, jump, switch)
-import Prelude hiding (const, map, zipWith)
+import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock, advC')
+import WidgetRattus.Signal hiding (const, integral, derivative, switch, stop, zipWith, zipWith3)
+import Prelude hiding (const, map, zipWith, zipWith3)
 
 data Fun a where
   K :: !a -> Fun a
@@ -204,8 +226,8 @@ stopWith p (Beh b) = Beh (run b)
         )
         ::: delay (run (adv xs))
 
-integral' :: forall s. (Stable s) => Float -> s -> Beh Float -> C (Beh Float)
-integral' cur s (Beh (K a ::: xs)) = do
+integral :: forall s. (Stable s) => Float -> s -> Beh Float -> C (Beh Float)
+integral cur s (Beh (K a ::: xs)) = do
   t <- time
   let rest =
         delayC
@@ -214,7 +236,7 @@ integral' cur s (Beh (K a ::: xs)) = do
                   t' <- time
                   let tDiff = diffTime t' t
                   let r = cur + a * fromRational (toRational tDiff)
-                  let result = integral' r s (Beh (adv xs))
+                  let result = integral r s (Beh (adv xs))
                   unwrap <$> result
               )
           )
@@ -229,7 +251,7 @@ integral' cur s (Beh (K a ::: xs)) = do
               )
           )
   return (Beh (curF ::: rest))
-integral' cur _ (Beh (Fun s f ::: xs)) = integralFun cur s f xs
+integral cur _ (Beh (Fun s f ::: xs)) = integralFun cur s f xs
   where
     integralFun :: forall s. (Stable s) => Float -> s -> Box (s -> Time -> (Float :* Maybe' s)) -> O (Sig (Fun Float)) -> C (Beh Float)
     integralFun cur s f xs =
@@ -247,7 +269,7 @@ integral' cur _ (Beh (Fun s f ::: xs)) = integralFun cur s f xs
                               case s' of
                                 Just' s''' -> s'''
                                 Nothing' -> s
-                        unwrap <$> integral' (cur + v * dt) s'' (Beh (adv xs))
+                        unwrap <$> integral (cur + v * dt) s'' (Beh (adv xs))
                     )
                 )
         let curF =
@@ -265,8 +287,8 @@ integral' cur _ (Beh (Fun s f ::: xs)) = integralFun cur s f xs
                 )
         return $ Beh (curF ::: rest)
 
-derivative' :: forall s. (Stable s) => Beh Float -> s -> C (Beh Float)
-derivative' (Beh (x ::: xs)) s = do
+derivative :: forall s. (Stable s) => Beh Float -> s -> C (Beh Float)
+derivative (Beh (x ::: xs)) s = do
   t <- time
   Beh <$> der (apply x t) s (x ::: xs)
   where
@@ -316,13 +338,13 @@ instance (Continuous a) => Continuous (Beh a) where
     if inputInClock inp cl
       then Beh (adv' xs inp)
       else progressInternal inp (Beh (x ::: xs))
-  progressAndNext inp b@(Beh (x ::: xs@(Delay cl _))) = 
+  progressAndNext inp b@(Beh _) = 
     let d = advC' (discretize b) inp
         (d', cl') = progressAndNext inp d
     in 
       (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
      
-  nextProgress b@(Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
+  nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
 
 -- Prevent functions from being inlined too early for the rewrite
 -- rules to fire.
