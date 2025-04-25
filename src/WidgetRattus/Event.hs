@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE RankNTypes #-}
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
@@ -176,37 +177,24 @@ denseToSparse ev =
 
 {-# ANN interleave AllowRecursion #-}
 interleave :: Box (a -> a -> a) -> Ev a -> Ev a -> Ev a
-interleave f (EvDense xs) (EvDense ys) =
-  EvDense $
-    delay
-      ( case select xs ys of
-          Fst (x ::: xs') ys' ->
-            let EvDense rest = interleave f (EvDense xs') (EvDense ys')
-             in (x ::: rest)
-          Snd xs' (y ::: ys') ->
-            let EvDense rest = interleave f (EvDense xs') (EvDense ys')
-             in (y ::: rest)
-          Both (x ::: xs') (y ::: ys') ->
-            let EvDense rest = interleave f (EvDense xs') (EvDense ys')
-             in unbox f x y ::: rest
+interleave f (EvDense xs) (EvDense ys) = EvDense (aux f xs ys)
+  where
+    aux f xs ys =
+      delay
+        ( case select xs ys of
+          Fst (x ::: xs') ys' -> (x ::: aux f xs' ys')
+          Snd xs' (y ::: ys') -> (y ::: aux f xs' ys')
+          Both (x ::: xs') (y ::: ys') -> unbox f x y ::: aux f xs' ys'
       )
-interleave f (EvSparse xs) (EvSparse ys) =
-  EvSparse $
-    delay
-      ( case select xs ys of
-          Fst (x ::: xs') ys' ->
-            let EvSparse rest = interleave f (EvSparse xs') (EvSparse ys')
-             in (x ::: rest)
-          Snd xs' (y ::: ys') ->
-            let EvSparse rest = interleave f (EvSparse xs') (EvSparse ys')
-             in (y ::: rest)
-          Both (x ::: xs') (y ::: ys') ->
-            let EvSparse rest = interleave f (EvSparse xs') (EvSparse ys')
-             in case x :* y of
-                  (Just' x' :* Just' y') ->
-                    Just' (unbox f x' y') ::: rest
-                  (_ :* _) ->
-                    Nothing' ::: rest
+interleave f (EvSparse xs) (EvSparse ys) = EvSparse (aux f xs ys)
+  where
+    aux f xs ys =
+      delay
+        ( case select xs ys of
+          Fst (x ::: xs') ys' -> (x ::: aux f xs' ys')
+          Snd xs' (y ::: ys') -> (y ::: aux f xs' ys')
+          Both (Just' x ::: xs') (Just' y ::: ys') -> Just' (unbox f x y) ::: aux f xs' ys'
+          Both (_ ::: xs') (_ ::: ys') -> Nothing' ::: aux f xs' ys'
       )
 interleave f (EvSparse xs) (EvDense ys) = interleave f (EvSparse xs) (EvSparse (denseToSparse ys))
 interleave f (EvDense xs) (EvSparse ys) = interleave f (EvSparse (denseToSparse xs)) (EvSparse ys)
