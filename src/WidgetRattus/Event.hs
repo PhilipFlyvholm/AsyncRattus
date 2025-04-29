@@ -194,6 +194,8 @@ interleave f (EvSparse xs) (EvSparse ys) = EvSparse (aux f xs ys)
           Fst (x ::: xs') ys' -> (x ::: aux f xs' ys')
           Snd xs' (y ::: ys') -> (y ::: aux f xs' ys')
           Both (Just' x ::: xs') (Just' y ::: ys') -> Just' (unbox f x y) ::: aux f xs' ys'
+          Both (Just' x ::: xs') (Nothing' ::: ys') -> Just' x ::: aux f xs' ys'
+          Both (Nothing' ::: xs') (Just' y ::: ys') -> Just' y ::: aux f xs' ys'
           Both (_ ::: xs') (_ ::: ys') -> Nothing' ::: aux f xs' ys'
       )
 interleave f (EvSparse xs) (EvDense ys) = interleave f (EvSparse xs) (EvSparse (denseToSparse ys))
