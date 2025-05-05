@@ -17,7 +17,7 @@ import Prelude hiding (const, filter, getLine, map, null, putStrLn, zip, zipWith
 integralTests :: C VStack
 integralTests = do
   time <- elapsedTime
-  time' <- integral 0 () (WidgetRattus.Behaviour.map (box realToFrac) time)
+  time' <- integral 0 (WidgetRattus.Behaviour.map (box realToFrac) time)
   let shouldBe = WidgetRattus.Behaviour.map (box (\t -> fromRational ((toRational t)^2)/2)) time
   originalLbl <- mkLabel time
   resultLbl <- mkLabel (WidgetRattus.Behaviour.map (box toText) time')
