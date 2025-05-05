@@ -3,10 +3,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TemplateHaskell #-}
-
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# HLINT ignore "Avoid lambda" #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
@@ -14,33 +13,32 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module WidgetRattus.Behaviour
- (
-  Beh (..),
-  Fun (..),
-  apply,
-  WidgetRattus.Behaviour.map,
-  mapF,
-  unwrap,
-  const,
-  constK,
-  timeBehaviour,
-  sampleInterval,
-  discretize,
-  elapsedTime,
-  withTime,
-  switch,
-  zipWith,
-  zipWith3,
-  stop,
-  stopWith,
-  integral,
-  derivative,
- )
+  ( Beh (..),
+    Fun (..),
+    apply,
+    WidgetRattus.Behaviour.map,
+    mapF,
+    unwrap,
+    const,
+    constK,
+    timeBehaviour,
+    sampleInterval,
+    discretize,
+    elapsedTime,
+    withTime,
+    switch,
+    zipWith,
+    zipWith3,
+    stop,
+    stopWith,
+    integral,
+    derivative,
+  )
 where
 
 import WidgetRattus
-import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock, advC')
-import WidgetRattus.Signal hiding (const, integral, derivative, switch, stop, zipWith, zipWith3)
+import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', advC', clockUnion, inputInClock)
+import WidgetRattus.Signal hiding (const, derivative, integral, stop, switch, zipWith, zipWith3)
 import Prelude hiding (const, map, zipWith, zipWith3)
 
 data Fun a where
@@ -56,7 +54,6 @@ apply (Fun s f) = \t -> let (a :* _) = unbox f s t in a
 mapF :: Box (a -> b) -> Fun a -> Fun b
 mapF f (K a) = K (unbox f a)
 mapF f (Fun s f') = Fun s (box (\s t -> let (a :* s') = unbox f' s t in (unbox f a :* s')))
-
 
 newtype Beh a = Beh (Sig (Fun a))
 
@@ -265,23 +262,20 @@ integral cur _ (Beh (Fun s f ::: xs)) = integralFun cur s f xs
                         let tDiff = diffTime t' t
                         let dt = fromRational (toRational tDiff)
                         let (v :* s') = unbox f s t'
-                        let s'' =
-                              case s' of
-                                Just' s''' -> s'''
-                                Nothing' -> s
-                        unwrap <$> integral (cur + v * dt) s'' (Beh (adv xs))
+                        let nextState = fromMaybe' s s'
+                        unwrap <$> integral (cur + v * dt) nextState (Beh (adv xs))
                     )
                 )
         let curF =
               Fun
                 (cur :* t :* s)
                 ( box
-                    ( \(lv :* lt :* ls) t' ->
-                        let tDiff = diffTime t' lt
+                    ( \(last :* t :* s) t' ->
+                        let tDiff = diffTime t' t
                             dt = fromRational (toRational tDiff)
-                            (v :* s') = unbox f ls t'
+                            (v :* s') = unbox f s t'
                          in case s' of
-                              Just' s'' -> lv + v * dt :* Just' (lv + v * dt :* t' :* s'')
+                              Just' s'' -> last + v * dt :* Just' (last + v * dt :* t' :* s'')
                               _ -> v + v * dt :* Nothing'
                     )
                 )
@@ -304,11 +298,8 @@ derivative (Beh (x ::: xs)) s = do
                       ( do
                           t' <- time
                           let (v :* s') = unbox f s t'
-                          let s''' =
-                                case s' of
-                                  Just' s'' -> s''
-                                  Nothing' -> s
-                          der v s''' (adv xs)
+                          let nextState = fromMaybe' s s'
+                          der v nextState (adv xs)
                       )
                   )
           let curF =
@@ -338,12 +329,11 @@ instance (Continuous a) => Continuous (Beh a) where
     if inputInClock inp cl
       then Beh (adv' xs inp)
       else progressInternal inp (Beh (x ::: xs))
-  progressAndNext inp b@(Beh _) = 
+  progressAndNext inp b@(Beh _) =
     let d = advC' (discretize b) inp
         (d', cl') = progressAndNext inp d
-    in 
-      (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
-     
+     in (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
+
   nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
 
 -- Prevent functions from being inlined too early for the rewrite

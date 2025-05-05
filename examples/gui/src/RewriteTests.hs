@@ -8,7 +8,6 @@ module Main where
 
 import WidgetRattus
 import WidgetRattus.Widgets
-import WidgetRattus.Behaviour
 import WidgetRattus.Event
 import Prelude hiding (const, filter, getLine, map, null, putStrLn, zip, zipWith)
 

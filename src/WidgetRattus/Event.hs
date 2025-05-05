@@ -121,11 +121,11 @@ trigger f event behaviour = EvSparse (trig f event behaviour)
     trig f' (EvDense as) (Beh (b ::: bs)) =
       delayC $
         delay
-          ( let d = select as bs
+          ( let choice = select as bs
              in ( do
                     t <- time
                     return
-                      ( case d of
+                      ( case choice of
                           Fst (a' ::: as') bs' -> Just' (unbox f' a' (apply b t)) ::: trig f' (EvDense as') (Beh (b ::: bs'))
                           Snd as' bs' -> Nothing' ::: trig f' (EvDense as') (Beh bs')
                           Both (a' ::: as') (b' ::: bs') -> Just' (unbox f' a' (apply b' t)) ::: trig f' (EvDense as') (Beh (b' ::: bs'))
