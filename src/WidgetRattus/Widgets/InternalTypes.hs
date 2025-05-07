@@ -34,7 +34,7 @@ data AppEvent where
 
 -- The IsWidget typeclass is used to define the mkWidgetNode function.
 class (Continuous a) => IsWidget a where
-  mkWidgetNode :: a -> C (M.WidgetNode AppModel AppEvent)
+  mkWidgetNode :: a -> Time -> (M.WidgetNode AppModel AppEvent)
 
   mkWidget :: a -> Widget
   mkWidget w = Widget w (constK True)
@@ -80,69 +80,58 @@ continuous ''Slider
 -- isWidget Instance declerations for Widgets.
 -- Here widgget data types are passed to Monomer constructors.
 instance IsWidget Button where
-  mkWidgetNode Button {btnContent = Beh ((txt ::: _)), btnClick = click} = do
-    t <- time
+  mkWidgetNode Button {btnContent = Beh ((txt ::: _)), btnClick = click} t =
     let txt' = apply txt t
-    return $ M.button (display txt') (AppEvent click ())
+    in M.button (display txt') (AppEvent click ())
 
 instance IsWidget TextField where
-  mkWidgetNode TextField {tfContent = Beh (txt ::: _), tfInput = inp} = do
-    t <- time
+  mkWidgetNode TextField {tfContent = Beh (txt ::: _), tfInput = inp} t =
     let txt' = apply txt t
-    return $ M.textFieldV txt' (AppEvent inp)
+    in M.textFieldV txt' (AppEvent inp)
 
 instance IsWidget Label where
-  mkWidgetNode Label {labText = Beh ((txt ::: _))} = do 
-    t <- time
+  mkWidgetNode Label {labText = Beh ((txt ::: _))} t =
     let txt' = apply txt t
-    return $ M.label (display txt')
+    in M.label (display txt')
 
 
 instance IsWidget HStack where
-      mkWidgetNode (HStack (Beh (cur:::_))) = do
-        t <- time
+      mkWidgetNode (HStack (Beh (cur:::_))) t =
         let cur' = apply cur t
-        children <- mapM mkWidgetNode (cur')
-        return $ M.hstack_ [ M.childSpacing_ 2] (reverse' children)
+            children = fmap (\x -> mkWidgetNode x t) cur'
+        in M.hstack_ [ M.childSpacing_ 2] (reverse' children)
 
 instance IsWidget VStack where
-      mkWidgetNode (VStack (Beh (cur:::_))) = do
-        t <- time
+      mkWidgetNode (VStack (Beh (cur:::_))) t =
         let cur' = apply cur t
-        children <- mapM mkWidgetNode (cur')
-        return $ M.vstack_ [ M.childSpacing_ 2] (reverse' children)
+            children = fmap (\x -> mkWidgetNode x t) cur'
+        in M.vstack_ [ M.childSpacing_ 2] (reverse' children)
 
 instance IsWidget TextDropdown where
-  mkWidgetNode TextDropdown {tddList = Beh(opts ::: _), tddCurr = Beh (curr ::: _), tddEvent = ch} = do
-      t <- time
+  mkWidgetNode TextDropdown {tddList = Beh(opts ::: _), tddCurr = Beh (curr ::: _), tddEvent = ch} t = 
       let opts' = apply opts t
-      let curr' = apply curr t
-      return $ M.textDropdownV curr' (AppEvent ch) opts'
+          curr' = apply curr t
+      in M.textDropdownV curr' (AppEvent ch) opts'
 
 instance IsWidget Popup where
-  mkWidgetNode Popup {popCurr = Beh (curr ::: _), popEvent = ch, popChild = Beh (child ::: _)} =
-    do
-      t <- time
+  mkWidgetNode Popup {popCurr = Beh (curr ::: _), popEvent = ch, popChild = Beh (child ::: _)} t =
       let curr' = apply curr t
-      let child' = apply child t
-      childNode <- mkWidgetNode child'
-      return $ M.popupV curr' (AppEvent ch) childNode
+          child' = apply child t
+          childNode = mkWidgetNode child' t
+      in M.popupV curr' (AppEvent ch) childNode
 
 instance IsWidget Slider where
-  mkWidgetNode Slider {sldCurr = Beh (curr ::: _), sldEvent = ch, sldMin = Beh (min ::: _), sldMax = Beh (max ::: _)} =
-    do
-      t <- time
+  mkWidgetNode Slider {sldCurr = Beh (curr ::: _), sldEvent = ch, sldMin = Beh (min ::: _), sldMax = Beh (max ::: _)} t =
       let curr' = apply curr t
-      let min' = apply min t
-      let max' = apply max t
-      return $ M.hsliderV curr' (AppEvent ch) min' max'
+          min' = apply min t
+          max' = apply max t
+      in M.hsliderV curr' (AppEvent ch) min' max'
 
 instance IsWidget Widget where
-  mkWidgetNode (Widget w (Beh (e ::: _))) = do
-    t <- time
-    child <- mkWidgetNode w
+  mkWidgetNode (Widget w (Beh (e ::: _))) t = 
     let e' = apply e t
-    return $ M.nodeEnabled child e'
+        child = mkWidgetNode w t
+    in M.nodeEnabled child e'
 
   mkWidget w = w
 

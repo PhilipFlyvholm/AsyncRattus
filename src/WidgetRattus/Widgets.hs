@@ -201,8 +201,9 @@ runApplication (C w) = do
   where
     builder _ (AppModel w _) =
       unsafePerformIO (do
-          let (C node) = mkWidgetNode w
-          node (OneInput 0 ()))
+          let (C t) = time
+          t' <- t (OneInput 0 ())
+          return $ mkWidgetNode w t')
         `M.styleBasic` [M.padding 3]
     handler _ _ (AppModel w cl) (AppEvent (Chan ch) d) =
       let inp = OneInput ch d
