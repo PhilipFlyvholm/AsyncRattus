@@ -31,7 +31,7 @@ window = do
 
   startTime <- time
   let timeWithMax = WidgetRattus.Behaviour.zipWith (box (:*)) timeBehaviour maxBeh
-  let timer = WidgetRattus.Event.trigger (box (\_ (t :* max) _ -> timeFrom max t)) (WidgetRattus.Event.interleave (box (\_ _ -> ())) resetTrigger maxChangeEv) timeWithMax
+  timer <- WidgetRattus.Event.trigger (box (\_ (t :* max) _ -> timeFrom max t)) (WidgetRattus.Event.interleave (box (\_ _ -> ())) resetTrigger maxChangeEv) timeWithMax
 
   let timer' = switchR (timeFrom initialMax startTime) timer
 

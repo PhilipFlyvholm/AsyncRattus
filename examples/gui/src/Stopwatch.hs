@@ -8,7 +8,6 @@
 module Main where
 
 import WidgetRattus
-import WidgetRattus.Signal (Sig ((:::)))
 import WidgetRattus.Widgets
 import WidgetRattus.Behaviour
 import WidgetRattus.Event
@@ -18,12 +17,12 @@ elapsedTime' :: C (NominalDiffTime -> Beh NominalDiffTime)
 elapsedTime' =
   do
     startTime <- time
-    return (\f -> Beh (Fun () (box (\_ currentTime -> (f + diffTime currentTime startTime) :*  Just' ())) ::: never))
+    return (\f -> const (Fun () (box (\_ currentTime -> (f + diffTime currentTime startTime) :*  Just' ()))))
 
 timerExample :: C VStack
 timerExample = do
   -- Time
-  startElapsedTime <- elapsedTime
+  let startElapsedTime = elapsedTime
   
   -- Buttons
   startBtn <- mkButton (mkConstText "Start")
