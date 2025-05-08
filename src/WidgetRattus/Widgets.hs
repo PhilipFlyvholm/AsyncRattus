@@ -93,7 +93,7 @@ mkTextField :: Text -> C TextField
 mkTextField txt = do
   c <- chan
   let (EvDense d) = mkEv (box (wait c))
-  let beh = Beh $ WidgetRattus.Signal.map (box K) (txt ::: d)
+  let beh = Beh (\_ -> WidgetRattus.Signal.map (box K) (txt ::: d))
   return TextField {tfContent = beh, tfInput = c}
 
 mkLabel :: (Displayable a) => Beh a -> C Label

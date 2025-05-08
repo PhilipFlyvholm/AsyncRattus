@@ -15,8 +15,8 @@ import Prelude hiding (const, filter, getLine, map, null, putStrLn, zip, zipWith
 
 derivativeTests :: C VStack
 derivativeTests = do
-  time <- elapsedTime
-  time' <- derivative (WidgetRattus.Behaviour.map (box realToFrac) time)
+  let time = elapsedTime
+  let time' = derivative (WidgetRattus.Behaviour.map (box realToFrac) time)
   let shouldBe = constK 1
   originalLbl <- mkLabel time
   resultLbl <- mkLabel (WidgetRattus.Behaviour.map (box toText) time')
@@ -24,7 +24,7 @@ derivativeTests = do
   shouldLbl <- mkLabel (WidgetRattus.Behaviour.map (box toText) shouldBe)
 
   let constantTest :: (Beh Float) = constK 514
-  constantTest' <- derivative constantTest
+  let constantTest' = derivative constantTest
   constantResultLbl <- mkLabel (WidgetRattus.Behaviour.map (box toText) constantTest')
   constantShouldLbl <- mkLabel (WidgetRattus.Behaviour.map (box toText) (constK 0))
 
