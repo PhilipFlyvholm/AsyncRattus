@@ -37,7 +37,7 @@ module WidgetRattus.Behaviour where
 -- )
 
 import WidgetRattus
-import WidgetRattus.InternalPrimitives (Continuous (..), InputValue (OneInput), O (Delay), adv', advC', clockUnion, inputInClock)
+import WidgetRattus.InternalPrimitives (Continuous (..), InputValue (OneInput), O (Delay), adv', advC', inputInClock)
 import WidgetRattus.Signal hiding (const, derivative, integral, stop, switch, zipWith, zipWith3)
 import Prelude hiding (const, map, zipWith, zipWith3)
 
@@ -56,7 +56,6 @@ mapF f (K a) = K (unbox f a)
 mapF f (Fun s f') = Fun s (box (\s t -> let (a :* s') = unbox f' s t in (unbox f a :* s')))
 
 type SBeh a = Sig (Fun a)
-instance Stable (SBeh a)
 
 newtype Beh a = Beh (Time -> SBeh a)
 
@@ -71,7 +70,7 @@ constK x = Beh (\_ -> K x ::: never)
 
 current :: Beh a -> Time -> a
 current (Beh as) t =
-  let (x ::: xs) = as t
+  let (x ::: _) = as t
    in apply x t
 
 future :: Beh a -> Time -> O (SBeh a)
@@ -358,9 +357,9 @@ derivative (Beh as) =
 instance (Continuous a) => Continuous (Beh a) where
   progressInternal inp (Beh as) =
     let t = advC' (time) inp
-        (x ::: xs@(Delay cl _)) = as t
+        (_ ::: xs@(Delay cl _)) = as t
      in if inputInClock inp cl
-          then Beh (\t -> adv' xs inp)
+          then Beh (\_ -> adv' xs inp)
           else progressInternal inp (Beh as)
 
   progressAndNext inp b@(Beh _) =

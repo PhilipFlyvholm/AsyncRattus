@@ -9,7 +9,7 @@ module WidgetRattus.Primitives
   ,Select(..)
   ,delay
   ,adv
-  --,promote
+  ,promote
   ,box
   ,unbox
   ,select
