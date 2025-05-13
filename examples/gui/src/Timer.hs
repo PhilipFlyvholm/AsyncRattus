@@ -14,7 +14,7 @@ intToNominal x = fromInteger (toInteger x)
 
 timeFrom :: Int -> Time -> Beh NominalDiffTime
 timeFrom max startTime =
-  stop (box (\t -> t > intToNominal max)) (WidgetRattus.Behaviour.map (box (`diffTime` startTime)) timeBehaviour)
+  stopWith (box (\t -> if t >= intToNominal max then Just' (intToNominal max) else Nothing')) (WidgetRattus.Behaviour.map (box (`diffTime` startTime)) timeBehaviour)
 
 
 window :: C VStack

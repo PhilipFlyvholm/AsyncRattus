@@ -35,7 +35,7 @@ timerExample = do
   let startTime :: Ev (NominalDiffTime -> Beh NominalDiffTime) =
         mkEv' (box (delay (let _ = adv (unbox startEv) in elapsedTime')))
   let stopTime :: Ev (NominalDiffTime -> Beh NominalDiffTime) =
-        mkEv (box (delay (let _ = adv (unbox stopEv) in const . K)))
+        mkEv (box (delay (let _ = adv (unbox stopEv) in constK)))
 
   let combinedInput = WidgetRattus.Event.interleave (box (\x _ -> x)) startTime stopTime
   let stopWatchSig = switchR (constK 0) combinedInput
