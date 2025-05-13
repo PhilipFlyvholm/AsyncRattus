@@ -169,6 +169,7 @@ zipWith f (Beh as) (Beh bs) =
             )
       )
       where
+        app :: Fun a -> Fun b -> Fun c
         app (K x') (K y') = K (unbox f x' y')
         app (Fun xs x') (Fun ys y') =
           Fun
