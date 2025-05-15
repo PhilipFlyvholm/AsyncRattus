@@ -37,34 +37,36 @@ class (Continuous a) => IsWidget a where
   mkWidgetNode :: a -> C (M.WidgetNode AppModel AppEvent)
 
   mkWidget :: a -> Widget
-  mkWidget w = Widget w (constK True)
+  mkWidget w = Widget w (WidgetRattus.Signal.const True)
 
-  setEnabled :: a -> Beh Bool -> Widget
-  setEnabled = Widget
+  setEnabled :: a -> Beh Bool -> C Widget
+  setEnabled w b = do 
+      b' <- discretize b
+      return (Widget w b')
 
 -- Custom data types for widgets.
 data Widget where
-  Widget :: (IsWidget a) => !a -> !(Beh Bool) -> Widget
+  Widget :: (IsWidget a) => !a -> !(Sig Bool) -> Widget
 
 data HStack where
-  HStack :: (IsWidget a) => !(Beh (List a)) -> HStack
+  HStack :: (IsWidget a) => !(Sig (List a)) -> HStack
 
 data VStack where
-  VStack :: (IsWidget a) => !(Beh (List a)) -> VStack
+  VStack :: (IsWidget a) => !(Sig (List a)) -> VStack
 
-data TextDropdown = TextDropdown {tddCurr :: !(Beh Text), tddEvent :: !(Chan Text), tddList :: !(Beh (List Text))}
+data TextDropdown = TextDropdown {tddCurr :: !(Sig Text), tddEvent :: !(Chan Text), tddList :: !(Sig (List Text))}
 
-data Popup = Popup {popCurr :: !(Beh Bool), popEvent :: !(Chan Bool), popChild :: !(Beh Widget)}
+data Popup = Popup {popCurr :: !(Sig Bool), popEvent :: !(Chan Bool), popChild :: !(Sig Widget)}
 
-data Slider = Slider {sldCurr :: !(Beh Int), sldEvent :: !(Chan Int), sldMin :: !(Beh Int), sldMax :: !(Beh Int)}
+data Slider = Slider {sldCurr :: !(Sig Int), sldEvent :: !(Chan Int), sldMin :: !(Sig Int), sldMax :: !(Sig Int)}
 
 data Button where
-  Button :: (Displayable a) => {btnContent :: !(Beh a), btnClick :: !(Chan ())} -> Button
+  Button :: (Displayable a) => {btnContent :: !(Sig a), btnClick :: !(Chan ())} -> Button
 
 data Label where
-  Label :: (Displayable a) => {labText :: !(Beh a)} -> Label
+  Label :: (Displayable a) => {labText :: !(Sig a)} -> Label
 
-data TextField = TextField {tfContent :: !(Beh Text), tfInput :: !(Chan Text)}
+data TextField = TextField {tfContent :: !(Sig Text), tfInput :: !(Chan Text)}
 
 -- Template Haskell code for generating instances of Continous.
 continuous ''Button
@@ -80,70 +82,50 @@ continuous ''Slider
 -- isWidget Instance declerations for Widgets.
 -- Here widgget data types are passed to Monomer constructors.
 instance IsWidget Button where
-  mkWidgetNode Button {btnContent = Beh ((txt ::: _)), btnClick = click} = do
-    t <- time
-    let txt' = apply txt t
-    return $ M.button (display txt') (AppEvent click ())
+  mkWidgetNode Button {btnContent = (txt ::: _), btnClick = click} = do
+    return $ M.button (display txt) (AppEvent click ())
 
 instance IsWidget TextField where
-  mkWidgetNode TextField {tfContent = Beh (txt ::: _), tfInput = inp} = do
-    t <- time
-    let txt' = apply txt t
-    return $ M.textFieldV txt' (AppEvent inp)
+  mkWidgetNode TextField {tfContent = txt ::: _, tfInput = inp} = do
+    return $ M.textFieldV txt (AppEvent inp)
 
 instance IsWidget Label where
-  mkWidgetNode Label {labText = Beh ((txt ::: _))} = do 
-    t <- time
-    let txt' = apply txt t
-    return $ M.label (display txt')
+  mkWidgetNode Label {labText = (txt ::: _)} = do 
+    return $ M.label (display txt)
 
 
 instance IsWidget HStack where
-      mkWidgetNode (HStack (Beh (cur:::_))) = do
-        t <- time
-        let cur' = apply cur t
-        children <- mapM mkWidgetNode (cur')
+      mkWidgetNode (HStack (cur:::_)) = do
+        children <- mapM mkWidgetNode (cur)
         return $ M.hstack_ [ M.childSpacing_ 2] (reverse' children)
 
 instance IsWidget VStack where
-      mkWidgetNode (VStack (Beh (cur:::_))) = do
-        t <- time
-        let cur' = apply cur t
-        children <- mapM mkWidgetNode (cur')
+      mkWidgetNode (VStack (cur:::_)) = do
+        children <- mapM mkWidgetNode (cur)
         return $ M.vstack_ [ M.childSpacing_ 2] (reverse' children)
 
 instance IsWidget TextDropdown where
-  mkWidgetNode TextDropdown {tddList = Beh(opts ::: _), tddCurr = Beh (curr ::: _), tddEvent = ch} = do
-      t <- time
-      let opts' = apply opts t
-      let curr' = apply curr t
-      return $ M.textDropdownV curr' (AppEvent ch) opts'
+  mkWidgetNode TextDropdown {tddList = opts ::: _, tddCurr = curr ::: _, tddEvent = ch} = do
+      return $ M.textDropdownV curr (AppEvent ch) opts
 
 instance IsWidget Popup where
-  mkWidgetNode Popup {popCurr = Beh (curr ::: _), popEvent = ch, popChild = Beh (child ::: _)} =
+  mkWidgetNode Popup {popCurr = curr ::: _, popEvent = ch, popChild = child ::: _} =
     do
-      t <- time
-      let curr' = apply curr t
-      let child' = apply child t
-      childNode <- mkWidgetNode child'
-      return $ M.popupV curr' (AppEvent ch) childNode
+      childNode <- mkWidgetNode child
+      return $ M.popupV curr (AppEvent ch) childNode
 
 instance IsWidget Slider where
-  mkWidgetNode Slider {sldCurr = Beh (curr ::: _), sldEvent = ch, sldMin = Beh (min ::: _), sldMax = Beh (max ::: _)} =
+  mkWidgetNode Slider {sldCurr = curr ::: _, sldEvent = ch, sldMin = min ::: _, sldMax = max ::: _} =
     do
-      t <- time
-      let curr' = apply curr t
-      let min' = apply min t
-      let max' = apply max t
-      return $ M.hsliderV curr' (AppEvent ch) min' max'
+      return $ M.hsliderV curr (AppEvent ch) min max
 
 instance IsWidget Widget where
-  mkWidgetNode (Widget w (Beh (e ::: _))) = do
-    t <- time
+  mkWidgetNode (Widget w (e ::: _)) = do
     child <- mkWidgetNode w
-    let e' = apply e t
-    return $ M.nodeEnabled child e'
+    return $ M.nodeEnabled child e
 
   mkWidget w = w
 
-  setEnabled (Widget w _) es = Widget w es
+  setEnabled (Widget w _) es = do
+     es' <- discretize es
+     return $ Widget w es'

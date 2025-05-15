@@ -26,7 +26,7 @@ window = do
 
   -- Slider
   maxSlider <- mkSlider initialMax (constK 1) (constK 100)
-  let maxBeh = sldCurr maxSlider
+  let maxBeh = sliderCurrent maxSlider
   let maxChangeEv = WidgetRattus.Event.map (box (Prelude.const ())) $ sliderOnChange maxSlider
 
   startTime <- time
