@@ -59,6 +59,7 @@ import Data.Ratio ((%))
 -- Continuous. Replace this manual instance declaration with Template
 -- Haskell.
 import WidgetRattus.InternalPrimitives
+import System.IO.Unsafe
 
 infixr 5 :::
 
@@ -426,6 +427,7 @@ instance Continuous a => Continuous (Sig a) where
         if inputInClock inp cl then (adv' xs inp)
         else progressInternal inp x ::: xs
     progressAndNext inp (x ::: xs@(Delay cl _)) = 
+        let _= unsafePerformIO (print "hallo") in
         if inputInClock inp cl then let n = adv' xs inp in (n, nextProgress n)
         else let (n , cl') = progressAndNext inp x in (n ::: xs , cl `clockUnion` cl')
     nextProgress (x ::: (Delay cl _)) = nextProgress x `clockUnion` cl

@@ -40,6 +40,7 @@ import WidgetRattus
 import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', advC', clockUnion, inputInClock)
 import WidgetRattus.Signal hiding (const, derivative, integral, stop, switch, zipWith, zipWith3)
 import Prelude hiding (const, map, zipWith, zipWith3)
+import System.IO.Unsafe
 
 data Fun a where
   K :: !a -> Fun a
@@ -325,16 +326,29 @@ derivative (Beh (x ::: xs)) = do
                 )
       return (curF ::: rest)
 
+-- instance (Continuous a) => Continuous (Beh a) where
+--   progressInternal inp (Beh (x ::: xs@(Delay cl _))) =
+--     if inputInClock inp cl
+--       then Beh (adv' xs inp)
+--       else progressInternal inp (Beh (x ::: xs))
+--   progressAndNext inp b@(Beh _) =
+--     let d = advC' (discretize b) inp
+--         (d', cl') = progressAndNext inp d
+--      in (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
+
+--   nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
+
 instance (Continuous a) => Continuous (Beh a) where
   progressInternal inp (Beh (x ::: xs@(Delay cl _))) =
     if inputInClock inp cl
       then Beh (adv' xs inp)
       else progressInternal inp (Beh (x ::: xs))
-  progressAndNext inp b@(Beh _) =
-    let d = advC' (discretize b) inp
-        (d', cl') = progressAndNext inp d
-     in (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
-
+  progressAndNext inp (Beh (x ::: xs@(Delay cl _))) =
+    if inputInClock inp cl
+      then
+        let n = adv' xs inp
+         in (Beh n, nextProgress n)
+      else let (n, cl') = progressAndNext inp x in (Beh (n ::: xs), cl `clockUnion` cl')
   nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
 
 -- Prevent functions from being inlined too early for the rewrite

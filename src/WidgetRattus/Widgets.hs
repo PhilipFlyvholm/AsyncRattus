@@ -52,6 +52,7 @@ module WidgetRattus.Widgets
     textFieldOnInput,
     runApplication,
     sliderOnChange,
+    sliderCurrent,
     mkConstText
   )
 where
@@ -87,18 +88,20 @@ instance Displayable NominalDiffTime where
 mkButton :: (Displayable a) => Beh a -> C Button
 mkButton t = do
   c <- chan
-  return Button {btnContent = t, btnClick = c}
+  t' <- discretize t
+  return Button {btnContent = t', btnClick = c}
 
 mkTextField :: Text -> C TextField
 mkTextField txt = do
   c <- chan
   let (EvDense d) = mkEv (box (wait c))
-  let beh = Beh $ WidgetRattus.Signal.map (box K) (txt ::: d)
+  let beh = txt ::: d
   return TextField {tfContent = beh, tfInput = c}
 
 mkLabel :: (Displayable a) => Beh a -> C Label
 mkLabel t = do
-  return Label {labText = t}
+  t' <- discretize t
+  return Label {labText = t'}
 
 class Widgets ws where
   toWidgetList :: ws -> List Widget
@@ -114,14 +117,17 @@ instance {-# OVERLAPPING #-} (Widgets w) => Widgets (List w) where
 
 mkHStack :: (IsWidget a) => Beh (List a) -> C HStack
 mkHStack wl = do
-  return (HStack wl)
+  wl' <- discretize wl
+  return (HStack wl')
 
 mkConstHStack :: (Widgets ws) => ws -> C HStack
 mkConstHStack w = mkHStack (constK (toWidgetList w))
 
 mkVStack :: (IsWidget a) => Beh (List a) -> C VStack
 mkVStack wl = do
-  return (VStack wl)
+
+  wl' <- discretize wl
+  return (VStack wl')
 
 mkConstVStack :: (Widgets ws) => ws -> C VStack
 mkConstVStack w = mkVStack (constK (toWidgetList w))
@@ -129,27 +135,33 @@ mkConstVStack w = mkVStack (constK (toWidgetList w))
 mkTextDropdown :: Beh (List Text) -> Text -> C TextDropdown
 mkTextDropdown opts init = do
   c <- chan
-  let beh = WidgetRattus.Event.stepper init $ mkEv (box (wait c))
-  return TextDropdown {tddCurr = beh, tddEvent = c, tddList = opts}
+  let beh = init ::: mkSig (box (wait c))
+  opts' <- discretize opts
+  return TextDropdown {tddCurr = beh, tddEvent = c, tddList = opts'}
 
 mkPopup :: Ev Bool -> Beh Widget -> C Popup
 mkPopup b w = do
   c <- chan
+  w' <- discretize w
   let changeEvent = mkEv (box (wait c))
-  let visibility = WidgetRattus.Event.stepper False $ WidgetRattus.Event.interleave (box Prelude.const) b changeEvent
-  return Popup {popCurr = visibility, popEvent = c, popChild = w}
+  visibility <- discretize (WidgetRattus.Event.stepper False $ WidgetRattus.Event.interleave (box Prelude.const) b changeEvent)
+  return Popup {popCurr = visibility, popEvent = c, popChild = w'}
 
 mkSlider :: Int -> Beh Int -> Beh Int -> C Slider
 mkSlider start min max = do
   c <- chan
-  let curr = WidgetRattus.Event.stepper start $ mkEv (box (wait c))
-  return Slider {sldCurr = curr, sldEvent = c, sldMin = min, sldMax = max}
+  let curr = start ::: mkSig (box (wait c))
+  min' <- discretize min
+  max' <- discretize max
+  return Slider {sldCurr = curr, sldEvent = c, sldMin = min', sldMax = max'}
 
 mkProgressBar :: Beh Int -> Beh Int -> Beh Int -> C Slider
 mkProgressBar min max curr = do
   c <- chan
-  let boundedCurrent = WidgetRattus.Behaviour.zipWith (box Prelude.min) curr max
-  return Slider {sldCurr = boundedCurrent, sldEvent = c, sldMin = min, sldMax = max}
+  boundedCurrent <- discretize $ WidgetRattus.Behaviour.zipWith (box Prelude.min) curr max
+  min' <- discretize min
+  max' <- discretize max
+  return Slider {sldCurr = boundedCurrent, sldEvent = c, sldMin = min', sldMax = max'}
 
 -- Helper function that takes a Button and returns a boxed delayed computation.
 -- The delayed computation is defined from the buttons input channel.
@@ -168,8 +180,10 @@ btnOnClickEv b = mkEv (btnOnClick b)
 -- ticks in response to user input on the textfield.
 -- Note: the input TF and output TF share an input channel
 -- Hence if both are part of a GUI they will be written to simultaneously
-setInputBehTF :: TextField -> Beh Text -> TextField
-setInputBehTF tf beh = tf {tfContent = beh}
+setInputBehTF :: TextField -> Beh Text -> C TextField
+setInputBehTF tf beh = do
+  beh' <- discretize beh
+  return $ tf {tfContent = beh'}
 
 -- Helper function that takes a TextField and returns a boxed delayed computation.
 -- The delayed computation is defined from the Textfields input channel.
@@ -182,6 +196,12 @@ sliderOnChange :: Slider -> Ev Int
 sliderOnChange s =
   let ch = sldEvent s
   in mkEv (box (wait ch))
+
+sliderCurrent :: Slider -> Beh Int
+sliderCurrent s =
+  let cur = sldCurr s
+  in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
+  
 
 mkConstText :: String -> Beh Text
 mkConstText s = constK (pack s)
