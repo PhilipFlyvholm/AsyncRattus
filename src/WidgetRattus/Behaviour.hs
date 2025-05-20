@@ -37,10 +37,9 @@ module WidgetRattus.Behaviour
 where
 
 import WidgetRattus
-import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', advC', clockUnion, inputInClock)
+import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock)
 import WidgetRattus.Signal hiding (const, derivative, integral, stop, switch, zipWith, zipWith3)
 import Prelude hiding (const, map, zipWith, zipWith3)
-import System.IO.Unsafe
 
 data Fun a where
   K :: !a -> Fun a

@@ -50,10 +50,12 @@ module WidgetRattus.Widgets
     btnOnClick,
     btnOnClickEv,
     textFieldOnInput,
+    textFieldContent,
+    textDropdownCurrent,
     runApplication,
     sliderOnChange,
     sliderCurrent,
-    mkConstText
+    mkConstText,
   )
 where
 
@@ -125,7 +127,6 @@ mkConstHStack w = mkHStack (constK (toWidgetList w))
 
 mkVStack :: (IsWidget a) => Beh (List a) -> C VStack
 mkVStack wl = do
-
   wl' <- discretize wl
   return (VStack wl')
 
@@ -192,16 +193,25 @@ textFieldOnInput tf =
   let ch = tfInput tf
    in mkEv (box (wait ch))
 
+textFieldContent :: TextField -> Beh Text
+textFieldContent tf =
+  let cur = tfContent tf
+   in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
+
+textDropdownCurrent :: TextDropdown -> Beh Text
+textDropdownCurrent s =
+  let cur = tddCurr s
+   in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
+
 sliderOnChange :: Slider -> Ev Int
 sliderOnChange s =
   let ch = sldEvent s
-  in mkEv (box (wait ch))
+   in mkEv (box (wait ch))
 
 sliderCurrent :: Slider -> Beh Int
 sliderCurrent s =
   let cur = sldCurr s
-  in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
-  
+   in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
 
 mkConstText :: String -> Beh Text
 mkConstText s = constK (pack s)
@@ -220,9 +230,7 @@ runApplication (C w) = do
   M.startApp (AppModel w' emptyClock) handler builder config
   where
     builder _ (AppModel w _) =
-      unsafePerformIO (do
-          let (C node) = mkWidgetNode w
-          node (OneInput 0 ()))
+      (mkWidgetNode w)
         `M.styleBasic` [M.padding 3]
     handler _ _ (AppModel w cl) (AppEvent (Chan ch) d) =
       let inp = OneInput ch d

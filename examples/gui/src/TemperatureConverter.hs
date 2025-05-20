@@ -44,8 +44,8 @@ window = do
     let f = stepper 32 (interleave (box (\x _ -> x)) fEvent convertCtoF)
 
     -- Bind input to TextFields
-    let tfF2 = setInputBehTF tfF1 (WidgetRattus.Behaviour.map (box toText) f)
-    let tfC2 = setInputBehTF tfC1 (WidgetRattus.Behaviour.map (box toText) c)
+    tfF2 <- setInputBehTF tfF1 (WidgetRattus.Behaviour.map (box toText) f)
+    tfC2 <- setInputBehTF tfC1 (WidgetRattus.Behaviour.map (box toText) c)
 
     -- UI
     fLabel <- mkLabel $ mkConstText "Fahrenheit"

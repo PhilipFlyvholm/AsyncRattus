@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# OPTIONS -fplugin=WidgetRattus.Plugin #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedLists #-}
 
 module WidgetRattus.Widgets.InternalTypes where
 
@@ -34,15 +34,15 @@ data AppEvent where
 
 -- The IsWidget typeclass is used to define the mkWidgetNode function.
 class (Continuous a) => IsWidget a where
-  mkWidgetNode :: a -> C (M.WidgetNode AppModel AppEvent)
+  mkWidgetNode :: a -> M.WidgetNode AppModel AppEvent
 
   mkWidget :: a -> Widget
   mkWidget w = Widget w (WidgetRattus.Signal.const True)
 
   setEnabled :: a -> Beh Bool -> C Widget
-  setEnabled w b = do 
-      b' <- discretize b
-      return (Widget w b')
+  setEnabled w b = do
+    b' <- discretize b
+    return (Widget w b')
 
 -- Custom data types for widgets.
 data Widget where
@@ -82,50 +82,47 @@ continuous ''Slider
 -- isWidget Instance declerations for Widgets.
 -- Here widgget data types are passed to Monomer constructors.
 instance IsWidget Button where
-  mkWidgetNode Button {btnContent = (txt ::: _), btnClick = click} = do
-    return $ M.button (display txt) (AppEvent click ())
+  mkWidgetNode Button {btnContent = (txt ::: _), btnClick = click} =
+    M.button (display txt) (AppEvent click ())
 
 instance IsWidget TextField where
-  mkWidgetNode TextField {tfContent = txt ::: _, tfInput = inp} = do
-    return $ M.textFieldV txt (AppEvent inp)
+  mkWidgetNode TextField {tfContent = txt ::: _, tfInput = inp} =
+    M.textFieldV txt (AppEvent inp)
 
 instance IsWidget Label where
-  mkWidgetNode Label {labText = (txt ::: _)} = do 
-    return $ M.label (display txt)
-
+  mkWidgetNode Label {labText = (txt ::: _)} =
+    M.label (display txt)
 
 instance IsWidget HStack where
-      mkWidgetNode (HStack (cur:::_)) = do
-        children <- mapM mkWidgetNode (cur)
-        return $ M.hstack_ [ M.childSpacing_ 2] (reverse' children)
+  mkWidgetNode (HStack (cur ::: _)) =
+    let children = fmap mkWidgetNode (cur)
+    in M.hstack_ [M.childSpacing_ 2] (reverse' children)
 
 instance IsWidget VStack where
-      mkWidgetNode (VStack (cur:::_)) = do
-        children <- mapM mkWidgetNode (cur)
-        return $ M.vstack_ [ M.childSpacing_ 2] (reverse' children)
+  mkWidgetNode (VStack (cur ::: _)) =
+    let children = fmap mkWidgetNode (cur)
+    in M.vstack_ [M.childSpacing_ 2] (reverse' children)
 
 instance IsWidget TextDropdown where
-  mkWidgetNode TextDropdown {tddList = opts ::: _, tddCurr = curr ::: _, tddEvent = ch} = do
-      return $ M.textDropdownV curr (AppEvent ch) opts
+  mkWidgetNode TextDropdown {tddList = opts ::: _, tddCurr = curr ::: _, tddEvent = ch} =
+    M.textDropdownV curr (AppEvent ch) opts
 
 instance IsWidget Popup where
   mkWidgetNode Popup {popCurr = curr ::: _, popEvent = ch, popChild = child ::: _} =
-    do
-      childNode <- mkWidgetNode child
-      return $ M.popupV curr (AppEvent ch) childNode
+      let childNode = mkWidgetNode child
+      in M.popupV curr (AppEvent ch) childNode
 
 instance IsWidget Slider where
   mkWidgetNode Slider {sldCurr = curr ::: _, sldEvent = ch, sldMin = min ::: _, sldMax = max ::: _} =
-    do
-      return $ M.hsliderV curr (AppEvent ch) min max
+      M.hsliderV curr (AppEvent ch) min max
 
 instance IsWidget Widget where
-  mkWidgetNode (Widget w (e ::: _)) = do
-    child <- mkWidgetNode w
-    return $ M.nodeEnabled child e
+  mkWidgetNode (Widget w (e ::: _)) =
+    let child = mkWidgetNode w
+    in M.nodeEnabled child e
 
   mkWidget w = w
 
   setEnabled (Widget w _) es = do
-     es' <- discretize es
-     return $ Widget w es'
+    es' <- discretize es
+    return $ Widget w es'

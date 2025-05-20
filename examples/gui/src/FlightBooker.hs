@@ -67,11 +67,11 @@ flightBooker = do
       bookButton <- mkButton (mkConstText "Book")
       
       -- Flight type checker
-      let isReturnFlight = WidgetRattus.Behaviour.map (box (== "Return-Flight")) (tddCurr flightTypeDropdown)
-      let isOneWayFlight = WidgetRattus.Behaviour.map (box (== "One-Way")) (tddCurr flightTypeDropdown)
+      let isReturnFlight = WidgetRattus.Behaviour.map (box (== "Return-Flight")) (textDropdownCurrent flightTypeDropdown)
+      let isOneWayFlight = WidgetRattus.Behaviour.map (box (== "One-Way")) (textDropdownCurrent flightTypeDropdown)
       
       -- Popup
-      let bookingSummary = zipWith3 (box bookingToText) isOneWayFlight (tfContent departureDateField) (tfContent returnDateField)
+      let bookingSummary = zipWith3 (box bookingToText) isOneWayFlight (textFieldContent departureDateField) (textFieldContent returnDateField)
 
       let triggerPopup = scan (box (\_ _ -> True)) False (btnOnClickEv bookButton)
       
@@ -80,15 +80,17 @@ flightBooker = do
       summaryPopup <- mkPopup triggerPopup (constK summaryLabel')
 
       -- Valid booking checker
-      let departureDateFieldIsDate = WidgetRattus.Behaviour.map (box isDate) (tfContent departureDateField)
-      let departureDateFieldIsLater = WidgetRattus.Behaviour.zipWith (box isLater) (tfContent departureDateField) (tfContent returnDateField)
+      let departureDateFieldIsDate = WidgetRattus.Behaviour.map (box isDate) (textFieldContent departureDateField)
+      let departureDateFieldIsLater = WidgetRattus.Behaviour.zipWith (box isLater) (textFieldContent departureDateField) (textFieldContent returnDateField)
 
       let oneWayAndDate = WidgetRattus.Behaviour.zipWith (box (&&)) isOneWayFlight departureDateFieldIsDate
       let returnFlightAndIsLater = WidgetRattus.Behaviour.zipWith (box (&&)) isReturnFlight departureDateFieldIsLater
       let validBooking = WidgetRattus.Behaviour.zipWith (box (||)) oneWayAndDate returnFlightAndIsLater
-
+      
+      returnDateField' <- setEnabled returnDateField isReturnFlight
+      bookButton' <- setEnabled bookButton validBooking
       -- UI
-      mkConstVStack (summaryPopup :* flightTypeDropdown :* departureDateField :* setEnabled returnDateField isReturnFlight :* setEnabled bookButton validBooking)
+      mkConstVStack (summaryPopup :* flightTypeDropdown :* departureDateField :* returnDateField' :* bookButton')
 
 main :: IO ()
 main = runApplication flightBooker
