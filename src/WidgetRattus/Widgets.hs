@@ -193,26 +193,38 @@ textFieldOnInput tf =
   let ch = tfInput tf
    in mkEv (box (wait ch))
 
+-- Helper function that takes a TextField and returns a Beh Text.
+-- The behaviour is defined from the Textfields content signal.
 textFieldContent :: TextField -> Beh Text
 textFieldContent tf =
   let cur = tfContent tf
    in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
 
+-- Helper function that takes a TextDropdown and returns a Beh Text.
+-- The behaviour is defined from the TextDropdown current signal.
 textDropdownCurrent :: TextDropdown -> Beh Text
 textDropdownCurrent s =
   let cur = tddCurr s
    in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
 
+
+-- Helper function that takes a Slider and returns a Ev Int.
+-- The event is defined from the Sliders input channel.
 sliderOnChange :: Slider -> Ev Int
 sliderOnChange s =
   let ch = sldEvent s
    in mkEv (box (wait ch))
 
+-- Helper function that takes a Slider and returns a Beh Text.
+-- The behaviour is defined from the Slider current signal.
 sliderCurrent :: Slider -> Beh Int
 sliderCurrent s =
   let cur = sldCurr s
    in Beh (WidgetRattus.Signal.map (box (\a -> K a)) cur)
 
+
+-- Helper function that takes a String and returns a Beh Text.
+-- Makes a constant text behaviour.
 mkConstText :: String -> Beh Text
 mkConstText s = constK (pack s)
 

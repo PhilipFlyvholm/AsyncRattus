@@ -29,17 +29,20 @@ import WidgetRattus.Behaviour hiding (map)
 import WidgetRattus.Signal hiding (buffer, interleave, interleaveAll, map, scan, switchR, switchS, trigger, triggerM)
 import Prelude hiding (filter, map)
 
+-- | @Ev a@ is a delayed stream of values of type @a@
+-- @EvDense e@ streams contain values of type @a@
+-- @EvSparse e@ streams contain values of type @Maybe' a@
 data Ev a
   = EvDense !(O (Sig a))
   | EvSparse !(O (Sig (Maybe' a)))
 
-unwrapEv :: Ev a -> O (Sig a)
-unwrapEv (EvDense e) = e
 
+-- | Turns a boxed delayed computation into an event
 mkEv :: Box (O a) -> Ev a
 mkEv a =
-  EvDense $ delay (adv (unbox a) ::: unwrapEv (mkEv a))
+  EvDense $ delay (adv (unbox a) ::: mkSig a)
 
+-- | Turns a boxed delayed computation into an event
 mkEv' :: Box (O (C a)) -> Ev a
 mkEv' b =
   EvDense
@@ -47,7 +50,7 @@ mkEv' b =
         ( delay
             ( do
                 a <- adv (unbox b)
-                return (a ::: unwrapEv (mkEv' b))
+                return (a ::: mkSig' b)
             )
         )
     )
@@ -57,13 +60,14 @@ mapMaybe f (Just' a) =
   Just' $ unbox f a
 mapMaybe _ Nothing' = Nothing'
 
+-- | Apply a function to the value of a event.
 map :: Box (a -> b) -> Ev a -> Ev b
 map f (EvDense sig) =
   EvDense
     ( delay
         ( let (x ::: xs) = adv sig
            in unbox f x
-                ::: unwrapEv (WidgetRattus.Event.map f (EvDense xs))
+                ::: let (EvDense rest) = (WidgetRattus.Event.map f (EvDense xs)) in rest
         )
     )
 map f (EvSparse sig) =
@@ -76,6 +80,7 @@ map f (EvSparse sig) =
         )
     )
 
+-- | Converts a stream of events in to a piecewise-constant behaviour
 stepper :: (Stable a) => a -> Ev a -> Beh a
 stepper initial event =
   Beh (K initial ::: delay (adv (aux initial event)))
@@ -92,6 +97,9 @@ stepper initial event =
                 Nothing' -> K initial ::: delay (adv (aux initial (EvSparse xs)))
         )
 
+-- | Trigger produces a value of from a behaviour when an event produces a value.(:*)
+-- Trigger returns a sparse event, meaning the return type is Sig (Maybe' c)
+-- @trigger f ev beh@ only produces a new value when @ev@ produces a new value.
 trigger :: (Stable b) => Box (a -> b -> c) -> Ev a -> Beh b -> Ev c
 trigger f event behaviour = EvSparse (trig f event behaviour)
   where
@@ -133,6 +141,7 @@ trigger f event behaviour = EvSparse (trig f event behaviour)
                 )
           )
 
+-- | Variant of trigger which returns a dense event
 triggerM :: (Stable b) => Box (a -> b -> Maybe' c) -> Ev a -> Beh b -> Ev (Maybe' c)
 triggerM f event behaviour = EvDense (trig f event behaviour)
   where
@@ -167,7 +176,6 @@ triggerM f event behaviour = EvDense (trig f event behaviour)
                       )
                 )
           )
-
 denseToSparse :: O (Sig a) -> O (Sig (Maybe' a))
 denseToSparse ev =
   delay
@@ -175,6 +183,18 @@ denseToSparse ev =
        in Just' x ::: denseToSparse xs
     )
 
+-- | This function interleaves two events producing a new value @v@
+-- whenever either input stream produces a new value @v@. In case the
+-- input events produce a new value simultaneously, the function
+-- argument is used break ties, i.e. to compute the new output value based
+-- on the two new input values
+--
+-- Example:
+--
+-- >                         xs: 1 3   5 3 1 3
+-- >                         ys:   0 2   4
+-- >
+-- > interleave (box (+)) xs ys: 1 3 2 5 7 1 3
 {-# ANN interleave AllowRecursion #-}
 interleave :: Box (a -> a -> a) -> Ev a -> Ev a -> Ev a
 interleave f (EvDense xs) (EvDense ys) = EvDense (aux f xs ys)
@@ -207,6 +227,11 @@ interleaveAll _ Nil = error "interleaveAll: List must be nonempty"
 interleaveAll _ [s] = s
 interleaveAll f (x :! xs) = interleave f x (interleaveAll f xs)
 
+-- | Similar to Haskell's 'scanl'.
+--
+-- > scan (box f) x (v1 ::: v2 ::: v3 ::: ... ) == (x `f` v1) ::: ((x `f` v1) `f` v2) ::: ...
+--
+-- Note: Unlike 'scanl', 'scan' starts with @x `f` v1@, not @x@.
 scan :: (Stable b) => Box (b -> a -> b) -> b -> Ev a -> Ev b
 scan f acc (EvDense ev) =
   EvDense $
@@ -230,6 +255,9 @@ scan f acc (EvSparse ev) =
                  in Just' acc ::: rest
       )
 
+-- | This function filters a event stream based on the predicate given.
+-- This function is a variant of filter, which uses a Maybe' instead of bool in the predicate.
+-- The filter function filter using the Maybe' type and returns a 'EvSparse'
 filterMap :: Box (a -> Maybe' b) -> Ev a -> Ev b
 filterMap f (EvDense ev) =
   EvSparse
@@ -250,9 +278,14 @@ filterMap f (EvSparse ev) =
         )
     )
 
+-- | This function filters a event stream based on the predicate given.
+-- The filter function filter using the Maybe' type and returns a 'EvSparse'
 filter :: Box (a -> Bool) -> Ev a -> Ev a
 filter f = filterMap (box (\x -> if unbox f x then Just' x else Nothing'))
 
+
+-- | This function is similar to 'switch', but the (future) second
+-- behaviour may depend on the last value of the first behaviour.
 switchS :: (Stable a) => Beh a -> O (a -> Beh a) -> Beh a
 switchS (Beh (x ::: xs)) d =
   let rest =
@@ -271,6 +304,9 @@ switchS (Beh (x ::: xs)) d =
           )
    in Beh (x ::: rest)
 
+-- | This function is similar to 'switch', but the (future) second
+-- behaviour may depend on the last value of the first behaviour.
+-- This is a variant of 'switchS', which works for sparse cases.
 switchSM :: (Stable a) => Beh a -> O (Maybe' (a -> Beh a)) -> Beh a
 switchSM (Beh (x ::: xs)) d =
   let rest =
@@ -291,6 +327,10 @@ switchSM (Beh (x ::: xs)) d =
           )
    in Beh (x ::: rest)
 
+-- | Variant of 'switchS' that repeatedly switches. The output behaviour
+-- @switch xs ys@ first behaves like @xs@, but whenever @ys@ produces
+-- a value @f@, the behaviour switches to @f v@ where @v@ is the previous
+-- value of the output behaviour. 
 switchR :: (Stable a) => Beh a -> Ev (a -> Beh a) -> Beh a
 switchR beh (EvDense steps) =
   switchS beh (delay (let step ::: steps' = adv steps in (\x -> switchR (step x) (EvDense steps'))))
@@ -305,6 +345,8 @@ switchR beh (EvSparse steps) =
         )
     )
 
+-- Buffer takes an initial value and a event as input and returns a event that
+-- is always one tick behind the input event.
 buffer :: (Stable a) => a -> Ev a -> Ev a
 buffer x (EvDense ys) = EvDense (delay (let (y ::: ys') = adv ys in (x ::: let (EvDense rest) = buffer y (EvDense ys') in rest)))
 buffer x (EvSparse ys) =

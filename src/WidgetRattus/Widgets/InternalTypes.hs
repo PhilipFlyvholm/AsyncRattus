@@ -80,7 +80,7 @@ continuous ''Popup
 continuous ''Slider
 
 -- isWidget Instance declerations for Widgets.
--- Here widgget data types are passed to Monomer constructors.
+-- Here widget data types are passed to Monomer constructors.
 instance IsWidget Button where
   mkWidgetNode Button {btnContent = (txt ::: _), btnClick = click} =
     M.button (display txt) (AppEvent click ())

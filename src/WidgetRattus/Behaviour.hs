@@ -37,44 +37,58 @@ module WidgetRattus.Behaviour
 where
 
 import WidgetRattus
-import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', clockUnion, inputInClock)
+import WidgetRattus.InternalPrimitives (Continuous (..))
 import WidgetRattus.Signal hiding (const, derivative, integral, stop, switch, zipWith, zipWith3)
 import Prelude hiding (const, map, zipWith, zipWith3)
 
+-- | Time function type as described in Elliot's paper. This is modified to hold a state.
+-- Either it is a constant value, or a function that takes a state and a time and returns a value and a new state.
 data Fun a where
   K :: !a -> Fun a
   Fun :: (Stable s) => !s -> !(Box (s -> Time -> (a :* Maybe' s))) -> Fun a
 
 continuous ''Fun
 
+-- | The apply function as presented in Elliot's paper. The function simplifies accessing the value of Fun types
+-- transforming a Fun a type into a Time -> a type. Thus you can use the apply function to get the value of a Fun type at a specific time.
 apply :: Fun a -> (Time -> a)
 apply (K a) = \_ -> a
 apply (Fun s f) = \t -> let (a :* _) = unbox f s t in a
 
+-- | The mapF function is used for mapping Fun types.
+-- This is useful for applying a function on a Fun type without applying time.
 mapF :: Box (a -> b) -> Fun a -> Fun b
 mapF f (K a) = K (unbox f a)
 mapF f (Fun s f') = Fun s (box (\s t -> let (a :* s') = unbox f' s t in (unbox f a :* s')))
 
+-- | The behaviour type, which is a signal of the type Fun a.
 newtype Beh a = Beh (Sig (Fun a))
 
+-- | Helper function to unwrap the Beh type and get the underlying signal.
 unwrap :: Beh a -> Sig (Fun a)
 unwrap (Beh a) = a
 
+-- | Helper function to make a behaviour that never ticks.
 const :: Fun a -> Beh a
 const x = Beh (x ::: never)
 
+-- | Helper function to make a constant behaviour that never ticks.
 constK :: a -> Beh a
 constK x = Beh (K x ::: never)
 
+-- | Identity function for Beh
 timeBehaviour :: Beh Time
 timeBehaviour = const (Fun () (box (\s t -> t :* Just' s)))
 
+-- | Apply a function to the value of a behaviour.
 map :: Box (a -> b) -> Beh a -> Beh b
 map f (Beh (x ::: xs)) = Beh (mapF f x ::: delay (unwrap $ WidgetRattus.Behaviour.map f (Beh (adv xs))))
 
+-- | Sample interval used in discretize.
 sampleInterval :: O ()
 sampleInterval = timer 20000
 
+-- | Discretize a behaviour. This function is used to convert a continuous behaviour into a discrete signal.
 discretize :: Beh a -> C (Sig a)
 discretize (Beh (K x ::: xs)) = do
   let rest = delayC $ delay (let x' = adv xs in discretize (Beh x'))
@@ -100,15 +114,23 @@ discretize (Beh (Fun s f ::: xs)) = discretizeFun s f xs
 
       return (cur ::: rest)
 
+-- | This function is used to get the elapsed time since the start of the program.
 elapsedTime :: C (Beh NominalDiffTime)
 elapsedTime = do
   startTime <- time
   return $ Beh (Fun () (box (\s currentTime -> diffTime currentTime startTime :* Just' s)) ::: never)
 
+-- | The withTime function, applies the current time to a delayed computation.
+-- It takes a delayed value of type O (Time -> a) and produces a delayed result of type O a.
+-- This is done by advancing the delayed function, retrieving the current time from the
+-- C monad, and applying the time to the function. The use of delayC eliminates
+-- the C monad, yielding a pure delayed value. Look in @trigger@ for an example of this.
 withTime :: O (Time -> a) -> O a
 withTime delayed =
   delayC $ delay (let f = adv delayed in do f <$> time)
 
+-- | This function is used to switch between two behaviours. It takes a behaviour and a delayed
+-- behaviour. When the delayed behaviour ticks, it will switch to this behaviour.
 switch :: Beh a -> O (Beh a) -> Beh a
 switch (Beh (x ::: xs)) d =
   Beh $
@@ -120,7 +142,7 @@ switch (Beh (x ::: xs)) d =
             Both _ (Beh d') -> d'
         )
 
--- | This function is a variant of combines the values of two signals
+-- | This function combines the values of two signals
 -- using the function argument. @zipWith f xs ys@ produces a new value
 -- @unbox f x y@ whenever @xs@ or @ys@ produce a new value, where @x@
 -- and @y@ are the current values of @xs@ and @ys@, respectively.
@@ -187,6 +209,10 @@ zipWith3 f as bs cs = WidgetRattus.Behaviour.zipWith (box (\f' x -> unbox f' x))
     cds :: Beh (Box (c -> d))
     cds = WidgetRattus.Behaviour.zipWith (box (\a b -> box (\c -> unbox f a b c))) as bs
 
+-- | Stops as soon as the the predicate becomes true for the current
+-- value. That is, @stop (box p) xs@ first behaves as @xs@, but as
+-- soon as @f x = True@ for some (current or future) value @x@ of
+-- @xs@, then it behaves as @const x@.
 stop :: Box (a -> Bool) -> Beh a -> Beh a
 stop p (Beh b) = Beh (run b)
   where
@@ -203,6 +229,7 @@ stop p (Beh b) = Beh (run b)
         )
         ::: delay (run (adv xs))
 
+-- | Variant of 'stop', which uses a Maybe' instead of a boolean.
 stopWith :: Box (a -> Maybe' a) -> Beh a -> Beh a
 stopWith p (Beh b) = Beh (run b)
   where
@@ -223,6 +250,10 @@ stopWith p (Beh b) = Beh (run b)
         )
         ::: delay (run (adv xs))
 
+-- | @integral x xs@ computes the integral of the behaviour @xs@ with the
+-- constant @x@. For example, if @xs@ is the velocity of an object,
+-- the behaviour @integral 0 xs@ describes the distance travelled by that
+-- object.
 integral :: Float -> Beh Float -> C (Beh Float)
 integral cur (Beh (K a ::: xs)) = do
   t <- time
@@ -238,15 +269,18 @@ integral cur (Beh (K a ::: xs)) = do
               )
           )
   let curF =
-        Fun
-          ()
-          ( box
-              ( \s t' ->
-                  let tDiff = diffTime t' t
-                      dt = fromRational (toRational tDiff)
-                   in cur + a * dt :* Just' s
+        case a of
+          0 -> K cur
+          a ->
+            Fun
+              ()
+              ( box
+                  ( \s t' ->
+                      let tDiff = diffTime t' t
+                          dt = fromRational (toRational tDiff)
+                       in cur + a * dt :* Just' s
+                  )
               )
-          )
   return (Beh (curF ::: rest))
 integral cur (Beh (Fun s f ::: xs)) = integralFun cur s f xs
   where
@@ -280,6 +314,9 @@ integral cur (Beh (Fun s f ::: xs)) = integralFun cur s f xs
                 )
         return $ Beh (curF ::: rest)
 
+-- | Compute the derivative of a behaviour. For example, if @xs@ is the
+-- velocity of an object, the behaviour @derivative xs@ describes the
+-- acceleration travelled by that object.
 derivative :: Beh Float -> C (Beh Float)
 derivative (Beh (x ::: xs)) = do
   t <- time
@@ -325,30 +362,12 @@ derivative (Beh (x ::: xs)) = do
                 )
       return (curF ::: rest)
 
--- instance (Continuous a) => Continuous (Beh a) where
---   progressInternal inp (Beh (x ::: xs@(Delay cl _))) =
---     if inputInClock inp cl
---       then Beh (adv' xs inp)
---       else progressInternal inp (Beh (x ::: xs))
---   progressAndNext inp b@(Beh _) =
---     let d = advC' (discretize b) inp
---         (d', cl') = progressAndNext inp d
---      in (Beh (WidgetRattus.Signal.map (box (\a -> K a)) d'), cl')
-
---   nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
-
 instance (Continuous a) => Continuous (Beh a) where
-  progressInternal inp (Beh (x ::: xs@(Delay cl _))) =
-    if inputInClock inp cl
-      then Beh (adv' xs inp)
-      else progressInternal inp (Beh (x ::: xs))
-  progressAndNext inp (Beh (x ::: xs@(Delay cl _))) =
-    if inputInClock inp cl
-      then
-        let n = adv' xs inp
-         in (Beh n, nextProgress n)
-      else let (n, cl') = progressAndNext inp x in (Beh (n ::: xs), cl `clockUnion` cl')
-  nextProgress (Beh (x ::: (Delay cl _))) = nextProgress x `clockUnion` cl
+  progressInternal inp (Beh sig) = Beh (progressInternal inp sig)
+  progressAndNext inp (Beh sig) =
+    let (sig', cl) = progressAndNext inp sig
+     in (Beh sig', cl)
+  nextProgress (Beh sig) = nextProgress sig
 
 -- Prevent functions from being inlined too early for the rewrite
 -- rules to fire.
