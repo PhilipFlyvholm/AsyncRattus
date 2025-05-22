@@ -59,7 +59,6 @@ import Data.Ratio ((%))
 -- Continuous. Replace this manual instance declaration with Template
 -- Haskell.
 import WidgetRattus.InternalPrimitives
-import System.IO.Unsafe
 
 infixr 5 :::
 

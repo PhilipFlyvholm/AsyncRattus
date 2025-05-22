@@ -27,6 +27,7 @@ import Data.IntMap ()
 import WidgetRattus
 import WidgetRattus.Behaviour hiding (map)
 import WidgetRattus.Signal hiding (buffer, interleave, interleaveAll, map, scan, switchR, switchS, trigger, triggerM)
+import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', inputInClock)
 import Prelude hiding (filter, map)
 
 -- | @Ev a@ is a delayed stream of values of type @a@
@@ -35,8 +36,7 @@ import Prelude hiding (filter, map)
 data Ev a
   = EvDense !(O (Sig a))
   | EvSparse !(O (Sig (Maybe' a)))
-
-
+  
 -- | Turns a boxed delayed computation into an event
 mkEv :: Box (O a) -> Ev a
 mkEv a =
@@ -358,6 +358,28 @@ buffer x (EvSparse ys) =
                 Nothing' -> x ::: let (EvDense rest) = buffer x (EvSparse ys') in rest
         )
     )
+
+
+instance (Continuous a) => Continuous (Ev a) where
+  progressInternal inp (EvDense xs@(Delay cl _)) =
+    if inputInClock inp cl
+      then let (_ ::: xs') = adv' xs inp in EvDense xs'
+      else progressInternal inp (EvDense xs)
+  progressInternal inp (EvSparse xs@(Delay cl _)) =
+    if inputInClock inp cl
+      then let (_ ::: xs') = adv' xs inp in EvSparse xs'
+      else progressInternal inp (EvSparse xs)
+
+  progressAndNext inp (EvDense xs@(Delay cl _)) =
+    if inputInClock inp cl
+      then let (_ ::: xs'@(Delay cl' _)) = adv' xs inp in (EvDense xs', cl')
+      else progressAndNext inp (EvDense xs)
+  progressAndNext inp (EvSparse xs@(Delay cl _)) =
+    if inputInClock inp cl
+      then let (_ ::: xs'@(Delay cl' _)) = adv' xs inp in (EvSparse xs', cl')
+      else progressAndNext inp (EvSparse xs)
+  nextProgress (EvDense (Delay cl _)) = cl
+  nextProgress (EvSparse (Delay cl _)) = cl
 
 -- Prevent functions from being inlined too early for the rewrite
 -- rules to fire.
