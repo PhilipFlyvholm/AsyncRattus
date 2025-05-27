@@ -90,29 +90,27 @@ sampleInterval = timer 20000
 
 -- | Discretize a behaviour. This function is used to convert a continuous behaviour into a discrete signal.
 discretize :: Beh a -> C (Sig a)
-discretize (Beh (K x ::: xs)) = do
-  let rest = delayC $ delay (let x' = adv xs in discretize (Beh x'))
-  return $ x ::: rest
-discretize (Beh (Fun s f ::: xs)) = discretizeFun s f xs
+discretize (Beh sig) = time >>= (pure . discr sig)
   where
-    discretizeFun :: (Stable s) => s -> Box (s -> Time -> (a :* Maybe' s)) -> O (Sig (Fun a)) -> C (Sig a)
-    discretizeFun s f xs = do
-      t <- time
-      let (cur :* s') = unbox f s t
-
-      let rest =
-            case s' of
-              Just' s'' ->
-                delayC $
-                  delay
-                    ( case select xs sampleInterval of
-                        Fst x _ -> discretize (Beh x)
-                        Snd beh' _ -> discretize (Beh (Fun s'' f ::: beh'))
-                        Both x _ -> discretize (Beh x)
-                    )
-              Nothing' -> delayC $ delay (let sig = adv xs in discretize (Beh sig))
-
-      return (cur ::: rest)
+    discr :: Sig (Fun a) -> Time -> Sig a
+    discr (K x ::: xs) _ = x ::: withTime (delay (discr (adv xs)))
+    discr (Fun s f ::: xs) t = discrFun s f xs t
+      where
+        discrFun :: (Stable s) => s -> Box (s -> Time -> (a :* Maybe' s)) -> O (Sig (Fun a)) -> Time -> Sig a
+        discrFun s f xs t =
+          let (cur :* s') = unbox f s t
+              rest =
+                case s' of
+                  Just' s'' ->
+                    withTime $
+                      delay
+                        ( case select xs sampleInterval of
+                            Fst x _ -> discr x
+                            Snd beh' _ -> discr (Fun s'' f ::: beh')
+                            Both x _ -> discr x
+                        )
+                  Nothing' -> withTime $ delay (discr (adv xs))
+          in (cur ::: rest)
 
 -- | This function is used to get the elapsed time since the start of the program.
 elapsedTime :: C (Beh NominalDiffTime)
@@ -250,117 +248,87 @@ stopWith p (Beh b) = Beh (run b)
         )
         ::: delay (run (adv xs))
 
+getDiff :: Time -> Time -> Float
+getDiff t' t = fromRational (toRational (diffTime t' t))
+
 -- | @integral x xs@ computes the integral of the behaviour @xs@ with the
 -- constant @x@. For example, if @xs@ is the velocity of an object,
 -- the behaviour @integral 0 xs@ describes the distance travelled by that
 -- object.
 integral :: Float -> Beh Float -> C (Beh Float)
-integral cur (Beh (K a ::: xs)) = do
-  t <- time
-  let rest =
-        delayC
-          ( delay
-              ( do
-                  t' <- time
-                  let tDiff = diffTime t' t
-                  let r = cur + a * fromRational (toRational tDiff)
-                  let result = integral r (Beh (adv xs))
-                  unwrap <$> result
-              )
-          )
-  let curF =
-        case a of
-          0 -> K cur
-          a ->
-            Fun
-              ()
-              ( box
-                  ( \s t' ->
-                      let tDiff = diffTime t' t
-                          dt = fromRational (toRational tDiff)
-                       in cur + a * dt :* Just' s
-                  )
-              )
-  return (Beh (curF ::: rest))
-integral cur (Beh (Fun s f ::: xs)) = integralFun cur s f xs
+integral cur (Beh s) = time >>= (\t -> pure (Beh (int cur s t)))
   where
-    integralFun :: forall s. (Stable s) => Float -> s -> Box (s -> Time -> (Float :* Maybe' s)) -> O (Sig (Fun Float)) -> C (Beh Float)
-    integralFun cur s f xs =
-      do
-        t <- time
-        let rest =
-              delayC
-                ( delay
-                    ( do
-                        t' <- time
-                        let tDiff = diffTime t' t
-                        let dt = fromRational (toRational tDiff)
-                        let (v :* _) = unbox f s t'
-                        unwrap <$> integral (cur + v * dt) (Beh (adv xs))
-                    )
-                )
-        let curF =
-              Fun
-                (cur :* t :* s)
-                ( box
-                    ( \(last :* t :* s) t' ->
-                        let tDiff = diffTime t' t
-                            dt = fromRational (toRational tDiff)
-                            (v :* s') = unbox f s t'
-                         in case s' of
-                              Just' s'' -> last + v * dt :* Just' (last + v * dt :* t' :* s'')
-                              _ -> v + v * dt :* Nothing'
-                    )
-                )
-        return $ Beh (curF ::: rest)
+    int :: Float -> Sig (Fun Float) -> Time -> Sig (Fun Float)
+    int cur (K a ::: xs) t =
+      let rest =
+            withTime $ delay (\t' -> int (calcIntegral cur a t t') (adv xs) t')
+          curF =
+            case a of
+              0 -> K cur
+              a -> Fun () $ box (\s t' -> calcIntegral cur a t t' :* Just' s)
+       in curF ::: rest
+    int cur (Fun s f ::: xs) t = intFun cur s f xs t
+      where
+        intFun :: forall s. (Stable s) => Float -> s -> Box (s -> Time -> (Float :* Maybe' s)) -> O (Sig (Fun Float)) -> Time -> Sig (Fun Float)
+        intFun cur s f xs t =
+          let rest =
+                withTime
+                  ( delay
+                      ( \t' ->
+                          let (v :* _) = unbox f s t'
+                           in int (calcIntegral cur v t t') (adv xs) t'
+                      )
+                  )
+              curF =
+                Fun
+                  (cur :* t :* s)
+                  ( box
+                      ( \(last :* t :* s) t' ->
+                          let (v :* s') = unbox f s t'
+                           in case s' of
+                                Just' s'' ->
+                                  let v' = calcIntegral last v t t'
+                                   in v' :* Just' (v' :* t' :* s'')
+                                _ -> calcIntegral v v t t' :* Nothing'
+                      )
+                  )
+           in curF ::: rest
+
+calcIntegral :: Float -> Float -> Time -> Time -> Float
+calcIntegral cur a t t' = cur + a * getDiff t' t
 
 -- | Compute the derivative of a behaviour. For example, if @xs@ is the
 -- velocity of an object, the behaviour @derivative xs@ describes the
 -- acceleration travelled by that object.
 derivative :: Beh Float -> C (Beh Float)
-derivative (Beh (x ::: xs)) = do
-  t <- time
-  Beh <$> der (apply x t) (x ::: xs)
+derivative (Beh (x ::: xs)) = time >>= (\t -> pure (Beh (der (apply x t) (x ::: xs) t)))
   where
-    der :: Float -> Sig (Fun Float) -> C (Sig (Fun Float))
-    der last (Fun s f ::: xs) = derFun last s f xs
+    der :: Float -> Sig (Fun Float) -> Time -> Sig (Fun Float)
+    der last (Fun s f ::: xs) t = derFun last s f xs t
       where
-        derFun :: forall s. (Stable s) => Float -> s -> Box (s -> Time -> (Float :* Maybe' s)) -> O (Sig (Fun Float)) -> C (Sig (Fun Float))
-        derFun last s f xs = do
-          t <- time
-          let rest =
-                delayC
-                  ( delay
-                      ( do
-                          t' <- time
-                          let (v :* _) = unbox f s t'
-                          der v (adv xs)
-                      )
-                  )
-          let curF =
+        derFun :: forall s. (Stable s) => Float -> s -> Box (s -> Time -> (Float :* Maybe' s)) -> O (Sig (Fun Float)) -> Time -> Sig (Fun Float)
+        derFun last s f xs t =
+          let rest = withTime $ delay (\t' -> let (v :* _) = unbox f s t' in der v (adv xs) t')
+              curF =
                 Fun (last :* t :* s) $
                   box
                     ( \(last :* t :* s) t' ->
-                        let tDiff = diffTime t' t
-                            dt = fromRational (toRational tDiff)
-                            (v :* s') = unbox f s t
-                         in case s' of
-                              Just' s'' -> (v - last) / dt :* Just' (v :* t' :* s'')
-                              Nothing' -> (v - last) / dt :* Nothing'
+                        let (v :* s') = unbox f s t
+                         in calcDerivative v last t t' :* fmap (\s'' -> v :* t' :* s'') s'
                     )
-          return (curF ::: rest)
-    der last (K x ::: xs) = do
-      t <- time
-      let rest = delayC (delay (do der x (adv xs)))
-      let curF =
+           in curF ::: rest
+    der last (K x ::: xs) t =
+      let rest = withTime (delay (der x (adv xs)))
+          curF =
             Fun (last :* t) $
               box
                 ( \(last :* t) t' ->
-                    let tDiff = diffTime t' t
-                        dt = fromRational (toRational tDiff)
-                     in if x /= last then (x - last) / dt :* Just' (x :* t') else 0 :* Nothing'
+                    if x /= last then calcDerivative x last t t' :* Just' (x :* t') else 0 :* Nothing'
                 )
-      return (curF ::: rest)
+       in curF ::: rest
+
+calcDerivative :: Float -> Float -> Time -> Time -> Float
+calcDerivative a b t t' = (a - b) / getDiff t' t
 
 instance (Continuous a) => Continuous (Beh a) where
   progressInternal inp (Beh sig) = Beh (progressInternal inp sig)

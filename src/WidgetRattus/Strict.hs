@@ -34,6 +34,7 @@ module WidgetRattus.Strict
     (:*)(..),
     Maybe'(..),
     maybe',
+    applyMaybe',
     fromMaybe',
     isJust',
     fst',
@@ -248,6 +249,11 @@ data Maybe' a = Just' !a | Nothing' deriving (Show, Eq, Ord)
 
 continuous ''Maybe'
 
+instance Functor Maybe' where
+    fmap f (Just' a) = Just' (f a)
+    fmap _ Nothing'   = Nothing'
+ 
+
 -- | takes a default value, a function, and a 'Maybe'' value.  If the
 -- 'Maybe'' value is 'Nothing'', the function returns the default
 -- value.  Otherwise, it applies the function to the value inside the
@@ -259,6 +265,12 @@ maybe' _ f (Just' x) = f x
 fromMaybe' :: a -> Maybe' a -> a
 fromMaybe' _ (Just' x) = x
 fromMaybe' d Nothing' = d
+
+applyMaybe' :: (a -> Maybe' b) -> Maybe' a -> Maybe' b
+applyMaybe' f val =
+    case val of
+        Just' x'  -> f x'
+        Nothing'  -> Nothing'
 
 
 {-# ANN toText AllowLazyData #-}
