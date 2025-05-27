@@ -14,7 +14,7 @@ module WidgetRattus.Event
     WidgetRattus.Event.scan,
     filterMap,
     filter,
-    switchS,
+    WidgetRattus.Event.switchS,
     switchSM,
     switchR,
     buffer,
@@ -27,7 +27,7 @@ import Data.IntMap ()
 import WidgetRattus
 import WidgetRattus.Behaviour hiding (map)
 import WidgetRattus.InternalPrimitives (Continuous (..), O (Delay), adv', inputInClock)
-import WidgetRattus.Signal hiding (buffer, interleaveAll, map, switchR, switchS, trigger, triggerM)
+import WidgetRattus.Signal hiding (buffer, interleaveAll, map, switchR, trigger, triggerM)
 import Prelude hiding (filter, map)
 
 -- | @Ev a@ is a delayed stream of values of type @a@
@@ -260,22 +260,11 @@ filter f = filterMap (box (\x -> if unbox f x then Just' x else Nothing'))
 -- | This function is similar to 'switch', but the (future) second
 -- behaviour may depend on the last value of the first behaviour.
 switchS :: (Stable a) => Beh a -> O (a -> Beh a) -> Beh a
-switchS (Beh (x ::: xs)) d =
-  let rest =
-        delayC
-          ( delay
-              ( let ticker = select xs d
-                 in do
-                      t <- time
-                      return
-                        ( case ticker of
-                            Fst xs' d' -> unwrap $ switchS (Beh xs') d'
-                            Snd _ f -> unwrap $ f (apply x t)
-                            Both _ f -> unwrap $ f (apply x t)
-                        )
-              )
-          )
-   in Beh (x ::: rest)
+switchS (Beh s) d =
+  Beh $
+    WidgetRattus.Signal.switchS s $
+      withTime $
+        mapO (box (\f a t -> let (Beh s') = f (apply t a) in s')) d
 
 -- | This function is similar to 'switch', but the (future) second
 -- behaviour may depend on the last value of the first behaviour.
@@ -283,12 +272,10 @@ switchS (Beh (x ::: xs)) d =
 switchSM :: (Stable a) => Beh a -> O (Maybe' (a -> Beh a)) -> Beh a
 switchSM (Beh (x ::: xs)) d =
   let rest =
-        delayC
+        withTime
           ( delay
               ( let ticker = select xs d
-                 in do
-                      t <- time
-                      return
+                 in ( \t ->
                         ( case ticker of
                             Fst xs' d' -> unwrap $ switchSM (Beh xs') d'
                             Snd _ (Just' f) -> unwrap $ f (apply x t)
@@ -296,6 +283,7 @@ switchSM (Beh (x ::: xs)) d =
                             Both _ (Just' f) -> unwrap $ f (apply x t)
                             Both xs' Nothing' -> xs'
                         )
+                    )
               )
           )
    in Beh (x ::: rest)
@@ -306,7 +294,7 @@ switchSM (Beh (x ::: xs)) d =
 -- value of the output behaviour.
 switchR :: (Stable a) => Beh a -> Ev (a -> Beh a) -> Beh a
 switchR beh (EvDense steps) =
-  switchS beh (delay (let step ::: steps' = adv steps in (\x -> switchR (step x) (EvDense steps'))))
+  WidgetRattus.Event.switchS beh (delay (let step ::: steps' = adv steps in (\x -> switchR (step x) (EvDense steps'))))
 switchR beh (EvSparse steps) =
   switchSM
     beh

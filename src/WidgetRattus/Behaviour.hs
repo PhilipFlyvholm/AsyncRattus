@@ -26,7 +26,7 @@ module WidgetRattus.Behaviour
     discretize,
     elapsedTime,
     withTime,
-    switch,
+    WidgetRattus.Behaviour.switch,
     zipWith,
     zipWith3,
     stop,
@@ -38,7 +38,7 @@ where
 
 import WidgetRattus
 import WidgetRattus.InternalPrimitives (Continuous (..))
-import WidgetRattus.Signal hiding (const, derivative, integral, stop, switch, zipWith, zipWith3)
+import WidgetRattus.Signal hiding (const, derivative, integral, stop, zipWith, zipWith3)
 import Prelude hiding (const, map, zipWith, zipWith3)
 
 -- | Time function type as described in Elliot's paper. This is modified to hold a state.
@@ -130,15 +130,7 @@ withTime delayed =
 -- | This function is used to switch between two behaviours. It takes a behaviour and a delayed
 -- behaviour. When the delayed behaviour ticks, it will switch to this behaviour.
 switch :: Beh a -> O (Beh a) -> Beh a
-switch (Beh (x ::: xs)) d =
-  Beh $
-    x
-      ::: delay
-        ( case select xs d of
-            Fst xs' d' -> unwrap $ WidgetRattus.Behaviour.switch (Beh xs') d'
-            Snd _ (Beh d') -> d'
-            Both _ (Beh d') -> d'
-        )
+switch (Beh s) d = Beh $ WidgetRattus.Signal.switch s $ mapO (box (\(Beh a) -> a)) d
 
 -- | This function combines the values of two signals
 -- using the function argument. @zipWith f xs ys@ produces a new value
@@ -356,9 +348,9 @@ instance (Continuous a) => Continuous (Beh a) where
   WidgetRattus.Behaviour.map f (constK x) =
     let x' = unbox f x in constK x'
 "beh.const/beh.switch" forall x xs.
-  switch (const x) xs =
+  WidgetRattus.Behaviour.switch (const x) xs =
     Beh (x ::: delay (unwrap (adv xs)))
 "beh.constK/beh.switch" forall x xs.
-  switch (constK x) xs =
+  WidgetRattus.Behaviour.switch (constK x) xs =
     Beh (K x ::: delay (unwrap (adv xs)))
   #-}
