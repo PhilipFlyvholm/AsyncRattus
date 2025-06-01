@@ -65,7 +65,7 @@ map f (EvSparse sig) =
 
 -- | Converts a stream of events in to a piecewise-constant behaviour
 stepper :: (Stable a) => a -> Ev a -> Beh a
-stepper initial ev =
+stepper initial ev = 
   Beh (K initial ::: delay (adv (aux initial ev)))
   where
     aux :: (Stable a) => a -> Ev a -> O (Sig (Fun a))
@@ -157,13 +157,6 @@ triggerM f event behaviour = EvDense (trig f event behaviour)
                 )
           )
 
-denseToSparse :: O (Sig a) -> O (Sig (Maybe' a))
-denseToSparse ev =
-  delay
-    ( let (x ::: xs) = adv ev
-       in Just' x ::: denseToSparse xs
-    )
-
 -- | This function interleaves two events producing a new value @v@
 -- whenever either input stream produces a new value @v@. In case the
 -- input events produce a new value simultaneously, the function
@@ -191,8 +184,8 @@ interleave f (EvSparse xs) (EvSparse ys) = EvSparse (aux f xs ys)
             Both (Nothing' ::: xs') (Just' y ::: ys') -> Just' y ::: aux f xs' ys'
             Both (_ ::: xs') (_ ::: ys') -> Nothing' ::: aux f xs' ys'
         )
-interleave f (EvSparse xs) (EvDense ys) = WidgetRattus.Event.interleave f (EvSparse xs) (EvSparse (denseToSparse ys))
-interleave f (EvDense xs) (EvSparse ys) = WidgetRattus.Event.interleave f (EvSparse (denseToSparse xs)) (EvSparse ys)
+interleave f (EvSparse xs) (EvDense ys) = WidgetRattus.Event.interleave f (EvSparse xs) (EvSparse (WidgetRattus.Signal.mapAwait (box Just') ys))
+interleave f (EvDense xs) (EvSparse ys) = WidgetRattus.Event.interleave f (EvSparse (WidgetRattus.Signal.mapAwait (box Just') xs)) (EvSparse ys)
 
 {-# ANN interleaveAll AllowRecursion #-}
 interleaveAll :: Box (a -> a -> a) -> List (Ev a) -> Ev a

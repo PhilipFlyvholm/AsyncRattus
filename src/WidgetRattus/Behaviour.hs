@@ -82,7 +82,7 @@ timeBehaviour = const (Fun () (box (\s t -> t :* Just' s)))
 
 -- | Apply a function to the value of a behaviour.
 map :: Box (a -> b) -> Beh a -> Beh b
-map f (Beh (x ::: xs)) = Beh (mapF f x ::: delay (unwrap $ WidgetRattus.Behaviour.map f (Beh (adv xs))))
+map f (Beh sig) = Beh $ WidgetRattus.Signal.map (box (mapF f)) sig
 
 -- | Sample interval used in discretize.
 sampleInterval :: O ()
@@ -204,20 +204,7 @@ zipWith3 f as bs cs = WidgetRattus.Behaviour.zipWith (box (\f' x -> unbox f' x))
 -- soon as @f x = True@ for some (current or future) value @x@ of
 -- @xs@, then it behaves as @const x@.
 stop :: Box (a -> Bool) -> Beh a -> Beh a
-stop p (Beh b) = Beh (run b)
-  where
-    run (K x ::: xs) = K x ::: if unbox p x then never else delay (run (adv xs))
-    run (Fun s f ::: xs) =
-      Fun
-        s
-        ( box
-            ( \s' t ->
-                let (a :* s'') = unbox f s' t
-                 in let b = unbox p a
-                     in (if b then a :* Nothing' else a :* s'')
-            )
-        )
-        ::: delay (run (adv xs))
+stop p b = stopWith (box (\a -> if unbox p a then Just' a else Nothing')) b
 
 -- | Variant of 'stop', which uses a Maybe' instead of a boolean.
 stopWith :: Box (a -> Maybe' a) -> Beh a -> Beh a
